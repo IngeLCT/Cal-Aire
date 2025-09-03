@@ -12,6 +12,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
 const sensorDataRef = database.ref('/ultima_medicion');
+
 let fechaInicioGlobal = null;
 let horaInicioGlobal = null;
 let ubicacionGlobal = null;
