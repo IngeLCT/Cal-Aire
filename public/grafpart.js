@@ -1,7 +1,7 @@
 // grafpart.js
 // grafpart.js
 window.addEventListener("load", () => {
-  const MAX_POINTS = 15; // siempre mostrar últimos 15
+  const MAX_POINTS = 24; // mostrar últimos 24
 
   const loadingClass = 'loading-msg';
   ["chartPM1","chartPM2_5","chartPM4_0","chartPM10"].forEach(addLoading);
@@ -33,10 +33,10 @@ window.addEventListener("load", () => {
     }], {
       title: { text: label, font: { size: 20, color: 'black', family: 'Arial', weight: 'bold' } },
       xaxis: {
-  // Cambiado 'Tiempo' -> 'Hora de Medición'
-  title: { text: 'Hora de Medición', font: { size: 14, color: 'black', family: 'Arial', weight: 'bold' } },
+        title: { text: 'Fecha y Hora de Medición', font: { size: 14, color: 'black', family: 'Arial', weight: 'bold' } },
+        type: 'date',
         tickfont: { color: 'black', size: 12, family: 'Arial', weight: 'bold' },
-        tickangle: -40
+        tickangle: -45
       },
       yaxis: {
         title: { text: label, font: { size: 14, color: 'black', family: 'Arial', weight: 'bold' } },
@@ -48,6 +48,23 @@ window.addEventListener("load", () => {
       margin: { t: 50, l: 60, r: 30, b: 90 },
       bargap: 0.2
     });
+  }
+
+  function toIsoDate(fecha){
+    if(!fecha || typeof fecha !== 'string'){
+      const d=new Date();
+      const mm=String(d.getMonth()+1).padStart(2,'0');
+      const dd=String(d.getDate()).padStart(2,'0');
+      return `${d.getFullYear()}-${mm}-${dd}`;
+    }
+    const [dd,mm,yy] = fecha.split('-');
+    const yyyy = yy && yy.length===2 ? `20${yy}` : (yy||new Date().getFullYear());
+    return `${yyyy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+  }
+  function makeTimestamp(v){
+    const isoDate = toIsoDate(v.fecha);
+    const h = v.hora || v.tiempo || '00:00:00';
+    return `${isoDate} ${h}`;
   }
 
   function BarSeries(divId) {
@@ -96,8 +113,7 @@ window.addEventListener("load", () => {
     if (!dataObj) return;
     const entries = Object.entries(dataObj); // [key, value]
     entries.forEach(([key, val]) => {
-      // Usar 'hora' principal; fallback a 'tiempo' para datos antiguos y finalmente a parte del key
-      const label = val.hora || val.tiempo || key.slice(-5);
+      const label = makeTimestamp(val);
       sPM1.addPoint(key, label, val.pm1p0 ?? 0);
       sPM25.addPoint(key, label, val.pm2p5 ?? 0);
       sPM40.addPoint(key, label, val.pm4p0 ?? 0);
@@ -110,7 +126,7 @@ window.addEventListener("load", () => {
   db.ref('/historial_mediciones').limitToLast(1).on('child_added', snap => {
     const key = snap.key;
     const val = snap.val();
-    const label = val.hora || val.tiempo || key.slice(-5);
+    const label = makeTimestamp(val);
     sPM1.addPoint(key, label, val.pm1p0 ?? 0);
     sPM25.addPoint(key, label, val.pm2p5 ?? 0);
     sPM40.addPoint(key, label, val.pm4p0 ?? 0);
