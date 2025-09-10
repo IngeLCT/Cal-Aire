@@ -24,7 +24,13 @@ let ESPIDGlobal = null;
 function prepararTablaVacia() {
   const tbl = document.getElementById('data-table');
   if (tbl && !tbl.dataset.prepared) {
-    tbl.dataset.prepared = '1';
+const lastMeasurementRef = database.ref('/historial_mediciones').orderByKey().limitToLast(1);
+
+let fechaInicioGlobal = null;
+let horaInicioGlobal = null;
+let ubicacionGlobal = null;
+let ESPIDGlobal = null;
+
     tbl.innerHTML = `
       <tr> <th>Mediciones</th> <th>Valor</th> <th>Unidad</th> </tr>
     `; // sin filas de datos todavía

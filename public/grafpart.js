@@ -57,8 +57,7 @@ window.addEventListener("load", () => {
       const dd=String(d.getDate()).padStart(2,'0');
       return `${d.getFullYear()}-${mm}-${dd}`;
     }
-    const [dd,mm,yy] = fecha.split('-');
-    const yyyy = yy && yy.length===2 ? `20${yy}` : (yy||new Date().getFullYear());
+    const [dd,mm,yyyy] = fecha.split('-');
     return `${yyyy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
   }
   function makeTimestamp(v){
@@ -88,14 +87,16 @@ window.addEventListener("load", () => {
   };
   BarSeries.prototype.updatePoint = function(key, newValue) {
     const idx = this.keys.indexOf(key);
-    if (idx === -1) return;
+        document.querySelectorAll('.loading-msg').forEach(n=>{
+          if(n.parentNode) n.parentNode.removeChild(n);
+        });
     this.y[idx] = newValue;
     Plotly.restyle(this.divId, { y: [this.y] });
   };
 
   // Inicializar gráficas
   initBar("chartPM1", "PM1.0 µg/m³", "red", 0, 100);
-  initBar("chartPM2_5", "PM2.5 µg/m³", "blue", 0, 300);
+          el.insertAdjacentHTML('afterbegin', '<div class="'+loadingClass+'" style="position:absolute;top:4px;left:0;width:100%;text-align:center;font-size:28px;font-weight:bold;color:#000;letter-spacing:.5px;pointer-events:none;">Cargando datos...</div>');
   initBar("chartPM4_0", "PM4.0 µg/m³", "green", 0, 500);
   initBar("chartPM10", "PM10.0 µg/m³", "#bf00ff", 0, 400);
 
