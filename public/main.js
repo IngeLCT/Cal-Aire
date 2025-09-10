@@ -162,13 +162,11 @@ function descargarCSV() {
     };
 
     function parseFechaHora(fechaStr, horaStr) {
-      // fechaStr: dd-mm-yy, horaStr: hh:mm:ss
+      // fechaStr: dd-mm-YYYY, horaStr: hh:mm:ss
       if (!fechaStr || typeof fechaStr !== 'string') fechaStr = '00-00-00';
       if (!horaStr || typeof horaStr !== 'string') horaStr = '00:00:00';
       // Convertir fecha a formato YYYYMMDD
-      const [d, m, y] = fechaStr.split('-').map(Number);
-      // Asume años 2000+ (ajusta si tu formato cambia)
-      const fullYear = y < 100 ? 2000 + y : y;
+      const [d, m, fullYear] = fechaStr.split('-').map(Number);
       // Convertir hora a segundos
       const [h, min, s] = horaStr.split(':').map(Number);
       return fullYear * 10000 + (m || 0) * 100 + (d || 0) + (h || 0) / 100 + (min || 0) / 10000 + (s || 0) / 1000000;
