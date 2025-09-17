@@ -19,18 +19,13 @@ let fechaInicioGlobal = null;
 let horaInicioGlobal = null;
 let ubicacionGlobal = null;
 let ESPIDGlobal = null;
+let ultimaFechaGlobal = null;
 
 // Preparar tabla vacía con encabezados y mensaje "Esperando Datos" arriba
 function prepararTablaVacia() {
   const tbl = document.getElementById('data-table');
   if (tbl && !tbl.dataset.prepared) {
-const lastMeasurementRef = database.ref('/historial_mediciones').orderByKey().limitToLast(1);
-
-let fechaInicioGlobal = null;
-let horaInicioGlobal = null;
-let ubicacionGlobal = null;
-let ESPIDGlobal = null;
-
+    tbl.dataset.prepared = '1';
     tbl.innerHTML = `
       <tr> <th>Mediciones</th> <th>Valor</th> <th>Unidad</th> </tr>
     `; // sin filas de datos todavía
@@ -68,6 +63,21 @@ historialRef.once('value', (snapshot) => {
   }
 });
 
+// Bootstrap: find the last known fecha among the latest records
+const ultFechaQuery = database.ref('/historial_mediciones').orderByKey().limitToLast(200);
+ultFechaQuery.once('value', snap => {
+  const obj = snap.val() || {};
+  const entries = Object.values(obj);
+  for(let i = entries.length - 1; i >= 0; i--){
+    const f = entries[i] && entries[i].fecha;
+    if (f && String(f).trim() !== '' && String(f).toLowerCase() !== 'nan'){
+      ultimaFechaGlobal = f;
+      if (!renderUltimaMedicion.ultimaFecha) renderUltimaMedicion.ultimaFecha = f;
+      break;
+    }
+  }
+});
+
 // Función de render reutilizable
 function renderUltimaMedicion(data) {
   if (!data) return;
@@ -82,6 +92,7 @@ function renderUltimaMedicion(data) {
   const IDBCursor = document.getElementById("ID");
   // Hora más reciente
   renderUltimaMedicion.ultimaHora = data.hora || renderUltimaMedicion.ultimaHora || '---';
+  renderUltimaMedicion.ultimaFecha = (data.fecha && String(data.fecha).trim() !== '' && String(data.fecha).toLowerCase() !== 'nan') ? data.fecha : (renderUltimaMedicion.ultimaFecha || ultimaFechaGlobal || fechaInicioGlobal || '---');
 
   // Asegurar que encabezado exista (si alguien limpió la tabla)
   if (!dataTable.querySelector('th')) {
@@ -104,12 +115,13 @@ function renderUltimaMedicion(data) {
   dataTable.innerHTML = header.outerHTML + rows.join('');
 
   // NO MODIFICAR
-  timeInfo.innerHTML = `
-    <strong>Fecha de inicio:</strong> ${fechaInicioGlobal ?? '---'} <br>
-    <strong>Hora de inicio:</strong> ${horaInicioGlobal ?? '---'}<br>
-    <strong>Ubicacion:</strong> ${ubicacionGlobal ?? '---'}<br>
-  <strong>Hora Ultima Medición:</strong> ${renderUltimaMedicion.ultimaHora}
-  `;
+  timeInfo.innerHTML = '' +
+    '<strong>Fecha de inicio:</strong> ' + (fechaInicioGlobal ?? '---') + ' <br>' +
+    '<strong>Hora de inicio:</strong> ' + (horaInicioGlobal ?? '---') + '<br>' +
+    '<strong>Ubicacion:</strong> ' + (ubicacionGlobal ?? '---') + '<br>' +
+    '<strong>Fecha Ultima Medición:</strong> ' + (renderUltimaMedicion.ultimaFecha) + '<br>' +
+    '<strong>Hora Ultima Medición:</strong> ' + (renderUltimaMedicion.ultimaHora);
+
 
   // NO MODIFICAR
   IDBCursor.innerHTML= `
