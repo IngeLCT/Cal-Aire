@@ -43,7 +43,7 @@ function prepararTablaVacia() {
       'font-weight:700',
       'color:#000'
     ].join(';');
-    msg.textContent = 'Esperando Datos';
+    msg.textContent = 'Esperando Datos...';
     const tableEl = document.getElementById('data-table');
     if (tableEl && tableEl.parentNode) {
       tableEl.parentNode.insertBefore(msg, tableEl); // insertar arriba de la tabla
@@ -59,23 +59,7 @@ if (document.readyState === 'loading') {
 }
 
 // Al iniciar la página, leer el primer registro del historial
-const historialRef = database.ref('/historial_mediciones').orderByKey().limitToFirst(1);
 
-historialRef.once('value', (snapshot) => {
-  const firstEntry = snapshot.val();
-  if (firstEntry) {
-    const entry = Object.values(firstEntry)[0];
-    fechaInicioGlobal = entry.fecha || null;
-    horaInicioGlobal = entry.inicio || null;
-    ubicacionGlobal = entry.ciudad || null;
-    ESPIDGlobal = entry.id || null;
-  }
-  // Si ya se mostró la última medición antes de que llegaran las globals,
-  // vuelve a pintar para que aparezcan ID / Fecha inicio / Hora inicio / Ubicación
-  if (ultimaMedicionCache) {
-    renderUltimaMedicion(ultimaMedicionCache);
-  }
-});
 
 // Bootstrap: find the last known fecha among the latest records
 const ultFechaQuery = database.ref('/historial_mediciones').orderByKey().limitToLast(200);
@@ -103,6 +87,20 @@ function renderUltimaMedicion(data) {
   if (!renderUltimaMedicion.first) {
     renderUltimaMedicion.first = true; // primera vez
   }
+
+  const historialRef = database.ref('/historial_mediciones').orderByKey().limitToFirst(1);
+
+  historialRef.once('value', (snapshot) => {
+    const firstEntry = snapshot.val();
+    if (firstEntry) {
+      const entry = Object.values(firstEntry)[0];
+      fechaInicioGlobal = entry.fecha || null;
+      horaInicioGlobal = entry.inicio || null;
+      ubicacionGlobal = entry.ciudad || null;
+      ESPIDGlobal = entry.id || null;
+    }
+  });
+
   const dataTable = document.getElementById("data-table");
   const timeInfo = document.getElementById("time-info");
   const IDBCursor = document.getElementById("ID");
@@ -140,7 +138,7 @@ function renderUltimaMedicion(data) {
 
 
   // NO MODIFICAR
-  IDBCursor.innerHTML= `
+  IDBCursor.innerHTML = `
   <strong>ID:</strong> ${ESPIDGlobal ?? '---'}  <br>
   `;
 }
