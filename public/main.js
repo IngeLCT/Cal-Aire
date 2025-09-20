@@ -34,7 +34,15 @@ function prepararTablaVacia() {
   if (!document.getElementById('waiting-msg')) {
     const msg = document.createElement('div');
     msg.id = 'waiting-msg';
-    msg.style.cssText = 'margin:10px 0;font-size:20px;font-weight:bold;color:#154360;letter-spacing:.5px;text-align:left;';
+    msg.style.cssText = [
+      'margin:20px 0',
+      'width:100%',
+      'display:block',
+      'text-align:center',
+      'font-size:32px',
+      'font-weight:700',
+      'color:#000'
+    ].join(';');
     msg.textContent = 'Esperando Datos';
     const tableEl = document.getElementById('data-table');
     if (tableEl && tableEl.parentNode) {
