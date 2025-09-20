@@ -20,6 +20,7 @@ let horaInicioGlobal = null;
 let ubicacionGlobal = null;
 let ESPIDGlobal = null;
 let ultimaFechaGlobal = null;
+let ultimaMedicionCache = null;
 
 // Preparar tabla vacía con encabezados y mensaje "Esperando Datos" arriba
 function prepararTablaVacia() {
@@ -61,6 +62,11 @@ historialRef.once('value', (snapshot) => {
     ubicacionGlobal = entry.ciudad || null;
     ESPIDGlobal = entry.id || null;
   }
+  // Si ya se mostró la última medición antes de que llegaran las globals,
+  // vuelve a pintar para que aparezcan ID / Fecha inicio / Hora inicio / Ubicación
+  if (ultimaMedicionCache) {
+    renderUltimaMedicion(ultimaMedicionCache);
+  }
 });
 
 // Bootstrap: find the last known fecha among the latest records
@@ -81,6 +87,8 @@ ultFechaQuery.once('value', snap => {
 // Función de render reutilizable
 function renderUltimaMedicion(data) {
   if (!data) return;
+  // guarda la última data para poder re-renderizar cuando lleguen las globals
+  ultimaMedicionCache = data;
   // Quitar mensaje de espera si existe
   const wait = document.getElementById('waiting-msg');
   if (wait) wait.remove();
