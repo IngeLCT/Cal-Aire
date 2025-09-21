@@ -20,7 +20,6 @@ let horaInicioGlobal = null;
 let ubicacionGlobal = null;
 let ESPIDGlobal = null;
 let ultimaFechaGlobal = null;
-let ultimaMedicionCache = null;
 
 // Preparar tabla vacía con encabezados y mensaje "Esperando Datos" arriba
 function prepararTablaVacia() {
@@ -59,7 +58,18 @@ if (document.readyState === 'loading') {
 }
 
 // Al iniciar la página, leer el primer registro del historial
+const historialRef = database.ref('/historial_mediciones').orderByKey().limitToFirst(1);
 
+historialRef.once('value', (snapshot) => {
+  const firstEntry = snapshot.val();
+  if (firstEntry) {
+    const entry = Object.values(firstEntry)[0];
+    fechaInicioGlobal = entry.fecha || null;
+    horaInicioGlobal = entry.inicio || null;
+    ubicacionGlobal = entry.ciudad || null;
+    ESPIDGlobal = entry.id || null;
+  }
+});
 
 // Bootstrap: find the last known fecha among the latest records
 const ultFechaQuery = database.ref('/historial_mediciones').orderByKey().limitToLast(200);
@@ -80,26 +90,12 @@ ultFechaQuery.once('value', snap => {
 function renderUltimaMedicion(data) {
   if (!data) return;
   // guarda la última data para poder re-renderizar cuando lleguen las globals
-  ultimaMedicionCache = data;
   // Quitar mensaje de espera si existe
   const wait = document.getElementById('waiting-msg');
   if (wait) wait.remove();
   if (!renderUltimaMedicion.first) {
     renderUltimaMedicion.first = true; // primera vez
   }
-
-  const historialRef = database.ref('/historial_mediciones').orderByKey().limitToFirst(1);
-
-  historialRef.once('value', (snapshot) => {
-    const firstEntry = snapshot.val();
-    if (firstEntry) {
-      const entry = Object.values(firstEntry)[0];
-      fechaInicioGlobal = entry.fecha || null;
-      horaInicioGlobal = entry.inicio || null;
-      ubicacionGlobal = entry.ciudad || null;
-      ESPIDGlobal = entry.id || null;
-    }
-  });
 
   const dataTable = document.getElementById("data-table");
   const timeInfo = document.getElementById("time-info");
