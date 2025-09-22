@@ -61,24 +61,40 @@ function isValidStr(v) {
   return v !== undefined && v !== null && String(v).trim() !== '' && String(v).toLowerCase() !== 'nan';
 }
 
+function hasAnyStatic() {
+  return [ESPIDGlobal, horaInicioGlobal, ubicacionGlobal, fechaInicioGlobal]
+    .some(isValidStr);
+}
+
+function clearStaticInfoUI() {
+  const staticP = document.getElementById('T-I-Static');
+  const idEl = document.getElementById('ID');
+  if (staticP) staticP.innerHTML = '';
+  if (idEl) idEl.innerHTML = '';
+}
+
 function updateStaticInfoUI() {
+  if (!hasAnyStatic()) {
+    clearStaticInfoUI();
+    return;
+  }
   const staticP = document.getElementById('T-I-Static');
   const idEl = document.getElementById('ID');
 
   if (staticP) {
     staticP.innerHTML =
-      '<strong>Fecha de inicio:</strong> ' + (fechaInicioGlobal ?? '---') + ' <br>' +
-      '<strong>Hora de inicio:</strong> ' + (horaInicioGlobal ?? '---') + '<br>' +
-      '<strong>Ubicación:</strong> ' + (ubicacionGlobal ?? '---');
+      '<strong>Fecha de inicio:</strong> ' + (fechaInicioGlobal ?? '') + ' <br>' +
+      '<strong>Hora de inicio:</strong> ' + (horaInicioGlobal ?? '') + '<br>' +
+      '<strong>Ubicación:</strong> ' + (ubicacionGlobal ?? '');
   }
   if (idEl) {
-    idEl.innerHTML = `<strong>ID:</strong> ${ESPIDGlobal ?? '---'}<br>`;
+    idEl.innerHTML = `<strong>ID:</strong> ${ESPIDGlobal ?? ''}<br>`;
   }
 }
 
 // ---- Escucha para fijar datos estáticos (y actualizar fecha si cambia de día)
 function listenStaticFields() {
-  // 1) Semilla: primer registro histórico (para ID, hora inicio, ubicación)
+  // 1) Primer registro histórico
   database.ref('/historial_mediciones').orderByKey().limitToFirst(1).once('value', (snap) => {
     const firstObj = snap.val();
     if (firstObj) {
@@ -86,20 +102,15 @@ function listenStaticFields() {
       if (ESPIDGlobal == null && isValidStr(entry.id)) ESPIDGlobal = entry.id;
       if (horaInicioGlobal == null && isValidStr(entry.inicio)) horaInicioGlobal = entry.inicio;
       if (ubicacionGlobal == null && isValidStr(entry.ciudad)) ubicacionGlobal = entry.ciudad;
-      // fechaInicioGlobal: la pondremos inicialmente si viene, pero se actualizará si llega otro día
       if (fechaInicioGlobal == null && isValidStr(entry.fecha)) fechaInicioGlobal = entry.fecha;
-      updateStaticInfoUI();
+      updateStaticInfoUI();         // <- pinta porque sí hay datos
     } else {
-      // No hay datos aún: muestra placeholders
-      updateStaticInfoUI();
+      clearStaticInfoUI();          // <- AHORA: sin datos, deja vacío
     }
   });
 
-  // 2) Escucha el último registro para:
-  //   - Caso "primer dato llega después": fijar ID/hora/ubicación si siguen nulos
-  //   - Caso "cambio de día": actualizar fechaInicioGlobal cuando entry.fecha cambie
+  // 2) Último registro para completar/actualizar
   const newestRef = database.ref('/historial_mediciones').limitToLast(1);
-
   const onAdded = (snap) => {
     const entry = snap.val() || {};
     if (ESPIDGlobal == null && isValidStr(entry.id)) ESPIDGlobal = entry.id;
@@ -107,13 +118,10 @@ function listenStaticFields() {
     if (ubicacionGlobal == null && isValidStr(entry.ciudad)) ubicacionGlobal = entry.ciudad;
 
     if (isValidStr(entry.fecha)) {
-      // Si cambió el día, actualiza la "fecha de inicio" mostrada en el bloque estático
-      if (fechaInicioGlobal !== entry.fecha) {
-        fechaInicioGlobal = entry.fecha;
-      }
-      ultimaFechaGlobal = entry.fecha; // también útil como respaldo
+      if (fechaInicioGlobal !== entry.fecha) fechaInicioGlobal = entry.fecha; // cambia solo si es otro día
+      ultimaFechaGlobal = entry.fecha;
     }
-    updateStaticInfoUI();
+    updateStaticInfoUI();           // pinta cuando llega el primer dato
   };
 
   newestRef.on('child_added', onAdded);
