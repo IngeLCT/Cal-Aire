@@ -155,7 +155,6 @@
     return out;
   }
 
-
   // ===================== Rango dinámico del eje Y =====================
   function updateYAxisRange(divId, yValues){
     const finite = (yValues||[]).filter(v => Number.isFinite(v) && v >= 0);

@@ -93,40 +93,63 @@
     return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
   }
 
-  // Ticktext amigable para eje categórico (con fecha en saltos)
+  // ===================== Etiquetado flexible del eje X =====================
+  // Opciones: 'start' | 'end' | 'range'
+  const LABEL_MODE = 'start'; // cámbialo a 'end' o 'range' cuando quieras
+
+  function fmt2(n){ return String(n).padStart(2,'0'); }
+  function fmtDate(ms){
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${fmt2(d.getMonth()+1)}-${fmt2(d.getDate())}`;
+  }
+  function fmtTime(ms){
+    const d = new Date(ms);
+    return `${fmt2(d.getHours())}:${fmt2(d.getMinutes())}`;
+  }
+
+  /**
+   * Devuelve la etiqueta del tick según el modo seleccionado.
+   * Nota: SIEMPRE usa la fecha del INICIO del bin para mantener el
+   * marcador de cambio de día en el “límite izquierdo”.
+   */
+  function makeBinLabel(binStartMs, minutes, mode = LABEL_MODE){
+    const date  = fmtDate(binStartMs);
+    const tBeg  = fmtTime(binStartMs);
+    const tEnd  = fmtTime(binStartMs + minutes*60000);
+    if (mode === 'end')   return `${date} ${tEnd}`;
+    if (mode === 'range') return `${date} ${tBeg}–${tEnd}`;
+    return `${date} ${tBeg}`; // 'start' (por defecto)
+  }
+
+  /**
+   * Coloca la FECHA en el tick anterior al cambio de día (límite izquierdo).
+   * Funciona con etiquetas 'start', 'end' o 'range' porque toma la fecha
+   * inicial del bin (que es la que pusimos al inicio de la etiqueta).
+   */
   function buildTickText(labels) {
-    // 1) Parseamos fecha y hora de cada etiqueta
     const items = labels.map(s => {
       const str = String(s ?? '');
       const m = str.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})/);
-      return {
-        date: m ? m[1] : '',          // yyyy-mm-dd
-        time: m ? m[2] : str          // hh:mm (o lo que haya)
-      };
+      return { date: m ? m[1] : '', time: m ? m[2] : str };
     });
 
-    // 2) Por defecto mostramos solo la hora
     const out = items.map(it => it.time);
-
-    // 3) Cuando cambia la fecha entre i-1 e i, ponemos la FECHA en i-1
     let curr = items[0]?.date || '';
     for (let i = 1; i < items.length; i++) {
       const d = items[i].date;
       if (d && curr && d !== curr) {
         const ddmmyyyy = curr.split('-').reverse().join('-');
-        out[i - 1] = `${items[i - 1].time}<br>${ddmmyyyy}`; // ← fecha en el tick previo
+        out[i - 1] = `${items[i - 1].time}<br>${ddmmyyyy}`; // fecha en el tick previo
         curr = d;
       }
     }
-
-    // 4) Si todo el tramo visible es de un solo día, añade la fecha al primer tick
     if (!out.some(t => String(t).includes('<br>')) && items[0]?.date) {
       const ddmmyyyy = items[0].date.split('-').reverse().join('-');
       out[0] = `${items[0].time}<br>${ddmmyyyy}`;
     }
-
     return out;
   }
+
 
   // ===================== Rango dinámico del eje Y =====================
   function updateYAxisRange(divId, yValues){
@@ -235,7 +258,7 @@
   // ===================== Data builders =====================
   function getLast24RawForKey(key) {
     const last = raw.slice(-MAX_BARS);
-    const labels = last.map(r => labelFromMs(r.ts));
+    const labels = last.map(r => makeBinLabel(r.ts, SAMPLE_BASE_MIN, LABEL_MODE));
     const values = last.map(r => Number(r[key]));
     return { labels, values };
   }
@@ -263,7 +286,7 @@
       .sort((a,b)=>a-b);
 
     const take = completeKeys.slice(-MAX_BARS);
-    const labels = take.map(b => labelFromMs(b));
+    const labels = take.map(b => makeBinLabel(b, minutes, LABEL_MODE));
     const values = take.map(b => groups.get(b).sum / groups.get(b).count);
     return { labels, values };
   }
