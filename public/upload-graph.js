@@ -1,4 +1,4 @@
-// upload-graph.js — Historial desde CSV con selector de intervalos + slider y tabla sincronizados (Plotly)
+// upload-graph.js — Historial desde CSV con selector de intervalos + slider propio y tabla sincronizada (Plotly)
 
 // ======= DOM =======
 const csvFileInput = document.getElementById('csvFileInput');
@@ -6,7 +6,7 @@ const statusMessage = document.getElementById('statusMessage');
 const dataSelector  = document.getElementById('dataSelector');
 const chartDiv      = document.getElementById('myChart');
 
-// Slider (doble) existente
+// Slider (doble) existente en tu HTML (NO Plotly)
 const rangeInputs   = document.querySelectorAll('input[type="range"]');
 const rangeTrack    = document.getElementById('range_track');
 const minBubble     = document.querySelector('.minvalue');
@@ -66,6 +66,13 @@ function makeBinLabel(binStartMs, minutes, mode = LABEL_MODE){
   const date  = fmtDate(binStartMs);
   const tBeg  = fmtTime(binStartMs);
   const tEnd  = fmtTime(binStartMs + minutes*60000);
+
+  // --- FIX: si minutes === 5 y LABEL_MODE === 'range', NO mostramos rango
+  if (minutes === SAMPLE_BASE_MIN) {
+    // siempre una sola hora para 5 min
+    return `${date} ${tBeg}`;
+  }
+
   if (mode === 'end')   return `${date} ${tEnd}`;
   if (mode === 'range') return `${date} ${tBeg}–${tEnd}`;
   return `${date} ${tBeg}`; // start
@@ -107,25 +114,30 @@ function buildTickText(labels) {
   return out;
 }
 
-// ======= CSS del selector de intervalos =======
-(function injectSelectorCSS(){
-  if (document.getElementById('agg-toolbar-css')) return;
-  const style = document.createElement('style');
-  style.id = 'agg-toolbar-css';
-  style.textContent = `
-    .agg-toolbar-wrap{ display:flex; flex-direction:column; gap:6px; margin:8px 0 4px 0; width:100%; }
-    .agg-chart-title{ font-weight:bold; font-size:20px; color:#000; text-align:center; line-height:1.1; }
-    .agg-toolbar-label{ font-weight:bold; font-size:16px; color:#000; text-align:left; }
-    .agg-toolbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; justify-content:flex-start; --agg-btn-w:80px; }
-    .agg-btn{
-      cursor:pointer; user-select:none; padding:6px 10px; border-radius:10px;
-      background:#e9f4ef; border:2px solid #2a2a2a; font-size:12px; font-weight:600; color:#000;
-      width:var(--agg-btn-w); text-align:center; transition:transform .12s, box-shadow .12s, font-size .12s;
-    }
-    .agg-btn:hover{ box-shadow:0 1px 0 rgba(0,0,0,.35); }
-    .agg-btn.active{ transform:scale(1.06); font-weight:bold; font-size:14px; background:#d9efe7; }
-  `;
-  document.head.appendChild(style);
+// ======= CSS del selector y de la TABLA =======
+(function injectCSS(){
+  if (!document.getElementById('agg-toolbar-css')) {
+    const style = document.createElement('style');
+    style.id = 'agg-toolbar-css';
+    style.textContent = `
+      .agg-toolbar-wrap{ display:flex; flex-direction:column; gap:6px; margin:8px 0 4px 0; width:100%; }
+      .agg-chart-title{ font-weight:bold; font-size:20px; color:#000; text-align:center; line-height:1.1; }
+      .agg-toolbar-label{ font-weight:bold; font-size:16px; color:#000; text-align:left; }
+      .agg-toolbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; justify-content:flex-start; --agg-btn-w:80px; }
+      .agg-btn{
+        cursor:pointer; user-select:none; padding:6px 10px; border-radius:10px;
+        background:#e9f4ef; border:2px solid #2a2a2a; font-size:12px; font-weight:600; color:#000;
+        width:var(--agg-btn-w); text-align:center; transition:transform .12s, box-shadow .12s, font-size .12s;
+      }
+      .agg-btn:hover{ box-shadow:0 1px 0 rgba(0,0,0,.35); }
+      .agg-btn.active{ transform:scale(1.06); font-weight:bold; font-size:14px; background:#d9efe7; }
+      /* --- Tabla historial: forzar fondo claro/transparente y texto negro --- */
+      #dataTable table { width:100%; border-collapse: collapse; background: transparent; color:#000; }
+      #dataTable th, #dataTable td { background: transparent; color:#000; border:1px solid #666; padding:4px 6px; text-align:left; }
+      #dataTable thead th { font-weight:700; }
+    `;
+    document.head.appendChild(style);
+  }
 })();
 
 // ======= Estado =======
@@ -137,6 +149,17 @@ let currentValues      = [];     // valores agregados (o crudos para 5 min)
 let minIndex=0, maxIndex=0;      // slider indices
 
 // ======= Utilidades =======
+function intervalLabel(minutes){
+  if (minutes === 5) return '5 min';
+  if (minutes === 15) return '15 min';
+  if (minutes === 30) return '30 min';
+  if (minutes === 60) return '1 hr';
+  if (minutes === 120) return '2 hr';
+  if (minutes === 360) return '6 hr';
+  if (minutes === 720) return '12 hr';
+  if (minutes === 1440) return '24 hr';
+  return `${minutes} min`;
+}
 function isFiniteNum(v){ return Number.isFinite(v); }
 function floorToBin(ts, minutes){ const w = minutes*60000; return ts - (ts % w); }
 
@@ -192,7 +215,7 @@ function updateYAxisRange(divId, yValues){
 // ======= Agregador =======
 function aggregateForKey(key, minutes){
   if (minutes === SAMPLE_BASE_MIN) {
-    // 5 min (crudo)
+    // 5 min (crudo, sin rangos en tick)
     const labels = rawRecords.map(r => makeBinLabel(r.ts, SAMPLE_BASE_MIN, LABEL_MODE));
     const values = rawRecords.map(r => Number(r.values[key]));
     return { labels, values };
@@ -284,11 +307,14 @@ function updateSliderUI(){
 }
 
 // ======= Tabla =======
-function updateDataTable(labels, values, key){
+function updateDataTable(labels, values, key, minutes){
   const table = document.createElement('table');
+  table.id = 'uploadTable';
   const thead = document.createElement('thead');
   const headerRow = document.createElement('tr');
-  ['#', 'Bin (Fecha/Hora)', key.toUpperCase()].forEach(text => {
+
+  const intervalText = intervalLabel(minutes); // ← “5 min”, “1 hr”, etc.
+  ['#', `Fecha y Hora (${intervalText})`, key.toUpperCase()].forEach(text => {
     const th = document.createElement('th'); th.textContent = text; headerRow.appendChild(th);
   });
   thead.appendChild(headerRow); table.appendChild(thead);
@@ -349,7 +375,7 @@ function rebuildForCurrentSelection(){
   setSliderBounds(currentLabels.length);
   // Pinta y tabla para el rango inicial completo
   plot(currentLabels, currentValues, key, title);
-  updateDataTable(currentLabels, currentValues, key);
+  updateDataTable(currentLabels, currentValues, key, currentAggMinutes);
 }
 
 // ======= Lectura de CSV =======
@@ -442,6 +468,6 @@ rangeInputs.forEach((input) => {
     const labels = currentLabels.slice(start, end+1);
     const values = currentValues.slice(start, end+1);
     plot(labels, values, key, title);
-    updateDataTable(currentLabels, currentValues, key);
+    updateDataTable(currentLabels, currentValues, key, currentAggMinutes);
   });
 });
