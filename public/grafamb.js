@@ -98,7 +98,7 @@
   // Opciones: 'start' | 'end' | 'range'
   const LABEL_MODE = 'end'; // cámbialo a 'end' o 'range' cuando quieras
   // Dónde estampar la fecha al cambiar de día: 'left' | 'right' | 'both'
-  const DATE_STAMP_MODE = 'right'; // usa 'right' si quieres ver el nuevo día bajo el primer tick del día
+  const DATE_STAMP_MODE = 'left'; // usa 'right' si quieres ver el nuevo día bajo el primer tick del día
 
   function fmt2(n){ return String(n).padStart(2,'0'); }
   function fmtDate(ms){
