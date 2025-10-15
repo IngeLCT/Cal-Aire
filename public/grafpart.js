@@ -102,6 +102,7 @@
   // ===================== Etiquetado flexible del eje X =====================
   // Opciones: 'start' | 'end' | 'range'
   const LABEL_MODE = 'start'; // cámbialo a 'end' o 'range' cuando quieras
+  const DATE_STAMP_MODE = 'right'; // usa 'right' si quieres ver el nuevo día bajo el primer tick del día
 
   function fmt2(n){ return String(n).padStart(2,'0'); }
   function fmtDate(ms){
@@ -132,29 +133,47 @@
    * Funciona con etiquetas 'start', 'end' o 'range' porque toma la fecha
    * inicial del bin (que es la que pusimos al inicio de la etiqueta).
    */
-  function buildTickText(labels) {
-    const items = labels.map(s => {
-      const str = String(s ?? '');
-      const m = str.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})/);
-      return { date: m ? m[1] : '', time: m ? m[2] : str };
-    });
+function buildTickText(labels) {
+  // Extrae la fecha y conserva TODO el texto de tiempo (hh:mm o hh:mm–hh:mm)
+  const items = labels.map(s => {
+    const str = String(s ?? '');
+    const m = str.match(/^(\d{4}-\d{2}-\d{2})\s+(.+)$/); // ← capturamos “todo lo de después”
+    return { date: m ? m[1] : '', timeLabel: m ? m[2] : str };
+  });
 
-    const out = items.map(it => it.time);
-    let curr = items[0]?.date || '';
-    for (let i = 1; i < items.length; i++) {
-      const d = items[i].date;
-      if (d && curr && d !== curr) {
-        const ddmmyyyy = curr.split('-').reverse().join('-');
-        out[i - 1] = `${items[i - 1].time}<br>${ddmmyyyy}`; // fecha en el tick previo
-        curr = d;
+  // De base mostramos el timeLabel completo
+  const out = items.map(it => it.timeLabel);
+
+  let curr = items[0]?.date || '';
+  let stamped = false;
+
+  for (let i = 1; i < items.length; i++) {
+    const d = items[i].date;
+    if (d && curr && d !== curr) {
+      const leftIdx = i - 1, rightIdx = i;
+      const ddLeft  = curr.split('-').reverse().join('-');
+      const ddRight = d.split('-').reverse().join('-');
+
+      if (DATE_STAMP_MODE !== 'right') {
+        out[leftIdx] = `${items[leftIdx].timeLabel}<br>${ddLeft}`;
+        stamped = true;
       }
+      if (DATE_STAMP_MODE !== 'left') {
+        out[rightIdx] = `${items[rightIdx].timeLabel}<br>${ddRight}`;
+        stamped = true;
+      }
+      curr = d;
     }
-    if (!out.some(t => String(t).includes('<br>')) && items[0]?.date) {
-      const ddmmyyyy = items[0].date.split('-').reverse().join('-');
-      out[0] = `${items[0].time}<br>${ddmmyyyy}`;
-    }
-    return out;
   }
+
+  // Si todo el tramo visible es del mismo día, estampa la fecha en el primer tick
+  if (!stamped && items[0]?.date) {
+    const dd = items[0].date.split('-').reverse().join('-');
+    out[0] = `${items[0].timeLabel}<br>${dd}`;
+  }
+
+  return out;
+}
 
   // ===================== Rango dinámico del eje Y =====================
   function updateYAxisRange(divId, yValues){
