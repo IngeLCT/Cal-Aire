@@ -1,339 +1,447 @@
-// upload-graph.js (versión Plotly.js con nuevo slider de doble rango estilo burbuja)
+// upload-graph.js — Historial desde CSV con selector de intervalos + slider y tabla sincronizados (Plotly)
 
+// ======= DOM =======
 const csvFileInput = document.getElementById('csvFileInput');
 const statusMessage = document.getElementById('statusMessage');
-const dataSelector = document.getElementById('dataSelector');
-const chartContainer = document.getElementById('myChart');
+const dataSelector  = document.getElementById('dataSelector');
+const chartDiv      = document.getElementById('myChart');
 
-const rangeInputs = document.querySelectorAll('input[type="range"]');
-const rangeTrack = document.getElementById('range_track');
-const minBubble = document.querySelector('.minvalue');
-const maxBubble = document.querySelector('.maxvalue');
+// Slider (doble) existente
+const rangeInputs   = document.querySelectorAll('input[type="range"]');
+const rangeTrack    = document.getElementById('range_track');
+const minBubble     = document.querySelector('.minvalue');
+const maxBubble     = document.querySelector('.maxvalue');
 
-let currentLoadedData = [];
-let minRange = 0, maxRange = 0, minPercentage = 0, maxPercentage = 0;
-const minRangeValueGap = 6;
+// Tabla
+const dataTableContainer = document.getElementById('dataTable');
 
+// ======= Constantes =======
+const SAMPLE_BASE_MIN    = 5;      // frecuencia de muestreo base
+const COVERAGE_FRACTION  = 0.90;   // umbral de cobertura de bin (90%)
+const MIN_SLIDER_GAP     = 6;      // separación mínima entre manijas
+const COLORS = {
+  // Partículas
+  'pm1.0':  'red',
+  'pm2.5':  '#bfa600',
+  'pm4.0':  '#00bfbf',
+  'pm10.0': '#bf00ff',
+  // Ambientales
+  'co2': '#990000',
+  'Temperatura': '#006600',
+  'HumedadRelativa': '#0000cc',
+  // Gases
+  'voc': '#ff8000',
+  'nox': '#00ff00'
+};
+
+// ======= Intervalos (selector) =======
+const MENU = [
+  { label:'Todo (5 min)', val: 5   },
+  { label:'15 min',       val: 15  },
+  { label:'30 min',       val: 30  },
+  { label:'1 hr',         val: 60  },
+  { label:'2 hr',         val: 120 },
+  { label:'6 hr',         val: 360 },
+  { label:'12 hr',        val: 720 },
+  { label:'24 hr',        val: 1440 },
+];
+
+// ======= Etiquetado flexible del eje X =======
+// 'start' | 'end' | 'range'
+const LABEL_MODE = 'start';
+
+// Estampado de fecha en el cambio de día: 'left-prev' | 'left-next' | 'right' | 'both'
+const DATE_STAMP_MODE = 'left-next';
+
+function fmt2(n){ return String(n).padStart(2,'0'); }
+function fmtDate(ms){
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${fmt2(d.getMonth()+1)}-${fmt2(d.getDate())}`;
+}
+function fmtTime(ms){
+  const d = new Date(ms);
+  return `${fmt2(d.getHours())}:${fmt2(d.getMinutes())}`;
+}
+function makeBinLabel(binStartMs, minutes, mode = LABEL_MODE){
+  const date  = fmtDate(binStartMs);
+  const tBeg  = fmtTime(binStartMs);
+  const tEnd  = fmtTime(binStartMs + minutes*60000);
+  if (mode === 'end')   return `${date} ${tEnd}`;
+  if (mode === 'range') return `${date} ${tBeg}–${tEnd}`;
+  return `${date} ${tBeg}`; // start
+}
+function buildTickText(labels) {
+  // Conserva todo el texto de hora: "hh:mm" o "hh:mm–hh:mm" tras la fecha
+  const items = labels.map(s => {
+    const str = String(s ?? '');
+    const m = str.match(/^(\d{4}-\d{2}-\d{2})\s+(.+)$/);
+    return { date: m ? m[1] : '', timeLabel: m ? m[2] : str };
+  });
+  const out = items.map(it => it.timeLabel);
+  let curr = items[0]?.date || '';
+  let stamped = false;
+
+  for (let i = 1; i < items.length; i++) {
+    const d = items[i].date;
+    if (d && curr && d !== curr) {
+      const ddPrev = curr.split('-').reverse().join('-');
+      const ddNew  = d.split('-').reverse().join('-');
+
+      switch (DATE_STAMP_MODE) {
+        case 'left-prev': out[i-1] = `${items[i-1].timeLabel}<br>${ddPrev}`; break;
+        case 'left-next': out[i-1] = `${items[i-1].timeLabel}<br>${ddNew}`;  break;
+        case 'right':     out[i]   = `${items[i].timeLabel}<br>${ddNew}`;    break;
+        case 'both':
+          out[i-1] = `${items[i-1].timeLabel}<br>${ddPrev}`;
+          out[i]   = `${items[i].timeLabel}<br>${ddNew}`;
+          break;
+      }
+      stamped = true;
+      curr = d;
+    }
+  }
+  if (!stamped && items[0]?.date) {
+    const dd = items[0].date.split('-').reverse().join('-');
+    out[0] = `${items[0].timeLabel}<br>${dd}`;
+  }
+  return out;
+}
+
+// ======= CSS del selector de intervalos =======
+(function injectSelectorCSS(){
+  if (document.getElementById('agg-toolbar-css')) return;
+  const style = document.createElement('style');
+  style.id = 'agg-toolbar-css';
+  style.textContent = `
+    .agg-toolbar-wrap{ display:flex; flex-direction:column; gap:6px; margin:8px 0 4px 0; width:100%; }
+    .agg-chart-title{ font-weight:bold; font-size:20px; color:#000; text-align:center; line-height:1.1; }
+    .agg-toolbar-label{ font-weight:bold; font-size:16px; color:#000; text-align:left; }
+    .agg-toolbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; justify-content:flex-start; --agg-btn-w:80px; }
+    .agg-btn{
+      cursor:pointer; user-select:none; padding:6px 10px; border-radius:10px;
+      background:#e9f4ef; border:2px solid #2a2a2a; font-size:12px; font-weight:600; color:#000;
+      width:var(--agg-btn-w); text-align:center; transition:transform .12s, box-shadow .12s, font-size .12s;
+    }
+    .agg-btn:hover{ box-shadow:0 1px 0 rgba(0,0,0,.35); }
+    .agg-btn.active{ transform:scale(1.06); font-weight:bold; font-size:14px; background:#d9efe7; }
+  `;
+  document.head.appendChild(style);
+})();
+
+// ======= Estado =======
+let parsedRows         = [];     // filas CSV originales (objetos)
+let rawRecords         = [];     // [{ts, values:{...}}]
+let currentAggMinutes  = 5;
+let currentLabels      = [];     // etiquetas de bins del intervalo seleccionado
+let currentValues      = [];     // valores agregados (o crudos para 5 min)
+let minIndex=0, maxIndex=0;      // slider indices
+
+// ======= Utilidades =======
+function isFiniteNum(v){ return Number.isFinite(v); }
+function floorToBin(ts, minutes){ const w = minutes*60000; return ts - (ts % w); }
+
+function parseCsv(text){
+  const lines = text.split('\n').filter(l => l.trim() !== '');
+  if (!lines.length) return [];
+  const headers = lines[0].split(',').map(h => h.trim());
+  const rows = [];
+  for (let i=1; i<lines.length; i++){
+    const values = lines[i].split(',').map(v => v.trim());
+    if (values.length !== headers.length) continue;
+    const row = {};
+    headers.forEach((h, idx) => row[h] = values[idx]);
+    rows.push(row);
+  }
+  return rows;
+}
+
+function toIsoDateFromCSV(fechaStr) {
+  if (!fechaStr) {
+    const d=new Date(); return `${d.getFullYear()}-${fmt2(d.getMonth()+1)}-${fmt2(d.getDate())}`;
+  }
+  const p = fechaStr.split(/[-/]/);
+  if (p.length !== 3) return new Date().toISOString().slice(0,10);
+  // Soporta DD-MM-YYYY y YYYY-MM-DD
+  if (p[0].length === 4) {
+    const [yyyy, mm, dd] = p;
+    return `${yyyy}-${fmt2(mm)}-${fmt2(dd)}`;
+  } else {
+    const [dd, mm, yyyy] = p;
+    return `${yyyy}-${fmt2(mm)}-${fmt2(dd)}`;
+  }
+}
+function parseTs(dateISO, horaStr){
+  const raw = String(horaStr||'00:00');
+  const hhmmss = /^\d{1,2}:\d{2}$/.test(raw) ? `${raw}:00` : raw;
+  const ms = Date.parse(`${dateISO}T${hhmmss}`);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function getColorForKey(key) {
+  return COLORS[key] || '#000066';
+}
+
+// Eje Y dinámico
+function updateYAxisRange(divId, yValues){
+  const finite = (yValues||[]).filter(v => Number.isFinite(v) && v >= 0);
+  const maxVal = finite.length ? Math.max(...finite) : 0;
+  const upper  = (maxVal > 0) ? (maxVal * 2) : 1;
+  Plotly.relayout(divId, { 'yaxis.autorange': false, 'yaxis.range': [0, upper] });
+}
+
+// ======= Agregador =======
+function aggregateForKey(key, minutes){
+  if (minutes === SAMPLE_BASE_MIN) {
+    // 5 min (crudo)
+    const labels = rawRecords.map(r => makeBinLabel(r.ts, SAMPLE_BASE_MIN, LABEL_MODE));
+    const values = rawRecords.map(r => Number(r.values[key]));
+    return { labels, values };
+  }
+
+  const byBin = new Map(); // binStart -> {sum, count}
+  for (const r of rawRecords){
+    const v = Number(r.values[key]);
+    if (!Number.isFinite(v)) continue;
+    const bin = floorToBin(r.ts, minutes);
+    const g = byBin.get(bin) || { sum:0, count:0 };
+    g.sum += v; g.count += 1;
+    byBin.set(bin, g);
+  }
+
+  const expected = minutes / SAMPLE_BASE_MIN;
+  const required = Math.max(1, Math.ceil(expected * COVERAGE_FRACTION));
+
+  const bins = Array.from(byBin.keys()).sort((a,b)=>a-b)
+    .filter(b => byBin.get(b).count >= required);
+
+  const labels = bins.map(b => makeBinLabel(b, minutes, LABEL_MODE));
+  const values = bins.map(b => byBin.get(b).sum / byBin.get(b).count);
+  return { labels, values };
+}
+
+// ======= Pintado =======
+function plot(labels, values, key, titleText) {
+  const idx = labels.map((_,i)=>i);
+  const ticktext = buildTickText(labels);
+  const trace = {
+    x: idx,
+    y: values,
+    type: 'bar',
+    name: titleText,
+    marker: { color: getColorForKey(key) }
+  };
+  const layout = {
+    xaxis: {
+      type: 'category',
+      tickmode:'array',
+      tickvals: idx,
+      ticktext,
+      tickangle:-45,
+      automargin:true,
+      gridcolor:'black',
+      linecolor:'black',
+      autorange:true,
+      title: { text:'<b>Fecha y Hora de Medición</b>', font:{ size:16,color:'black',family:'Arial',weight:'bold' }, standoff: 36 },
+      tickfont: { color:'black', size:14, family:'Arial', weight:'bold' }
+    },
+    yaxis: {
+      title: { text: `<b>${titleText}</b>`, font:{ size:16,color:'black',family:'Arial',weight:'bold' } },
+      tickfont: { color:'black', size:14, family:'Arial', weight:'bold' },
+      rangemode:'tozero',
+      gridcolor:'black',
+      linecolor:'black',
+      autorange:true,
+      fixedrange:false
+    },
+    margin:{ t:20, l:60, r:40, b:130 },
+    bargap:0.2,
+    paper_bgcolor:'#cce5dc',
+    plot_bgcolor:'#cce5dc',
+    showlegend:false
+  };
+  Plotly.newPlot(chartDiv, [trace], layout, {responsive:true, useResizeHandler:true});
+  updateYAxisRange(chartDiv.id, values);
+}
+
+// ======= Slider helpers =======
+function setSliderBounds(n){
+  rangeInputs[0].max = rangeInputs[1].max = Math.max(0, n-1);
+  rangeInputs[0].value = 0;
+  rangeInputs[1].value = Math.max(0, n-1);
+  minIndex = 0; maxIndex = Math.max(0, n-1);
+  updateSliderUI();
+}
+function minRangeFill(){ rangeTrack.style.left  = (rangeInputs[0].value / (rangeInputs[0].max||1)) * 100 + "%"; }
+function maxRangeFill(){ rangeTrack.style.right = 100 - (rangeInputs[1].value / (rangeInputs[1].max||1)) * 100 + "%"; }
+function MinVlaueBubbleStyle(){ const p=(rangeInputs[0].value/(rangeInputs[0].max||1))*100; minBubble.style.left = `${p}%`; }
+function MaxVlaueBubbleStyle(){ const p=(rangeInputs[1].value/(rangeInputs[1].max||1))*100; maxBubble.style.left = `${p}%`; }
+function setMinValueOutput(){ minIndex = parseInt(rangeInputs[0].value||'0'); minBubble.innerHTML = currentLabels[minIndex] || ''; }
+function setMaxValueOutput(){ maxIndex = parseInt(rangeInputs[1].value||'0'); maxBubble.innerHTML = currentLabels[maxIndex] || ''; }
+function updateSliderUI(){
+  setMinValueOutput(); setMaxValueOutput();
+  minRangeFill(); maxRangeFill();
+  MinVlaueBubbleStyle(); MaxVlaueBubbleStyle();
+}
+
+// ======= Tabla =======
+function updateDataTable(labels, values, key){
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+  ['#', 'Bin (Fecha/Hora)', key.toUpperCase()].forEach(text => {
+    const th = document.createElement('th'); th.textContent = text; headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow); table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  for (let i=minIndex, j=0; i<=maxIndex; i++, j++){
+    const tr = document.createElement('tr');
+    const tdIdx   = document.createElement('td'); tdIdx.textContent = j; tr.appendChild(tdIdx);
+    const tdLab   = document.createElement('td'); tdLab.textContent = labels[i] || '-'; tr.appendChild(tdLab);
+    const tdValue = document.createElement('td'); tdValue.textContent = (values[i] ?? '-'); tr.appendChild(tdValue);
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  dataTableContainer.innerHTML = ''; dataTableContainer.appendChild(table);
+}
+
+// ======= Toolbar de intervalos =======
+function ensureToolbar(){
+  if (document.getElementById('agg-toolbar-upload')) return;
+  const wrapper = document.createElement('div');
+  wrapper.className = 'agg-toolbar-wrap';
+  wrapper.id = 'agg-toolbar-upload';
+  wrapper.innerHTML = `
+    <div class="agg-chart-title">Historial</div>
+    <div class="agg-toolbar-label">Seleccione el intervalo de lecturas</div>
+    <div class="agg-toolbar" id="agg-toolbar-buttons"></div>
+  `;
+  // Insertar antes del contenedor de la gráfica
+  chartDiv.parentElement.parentElement.insertBefore(wrapper, chartDiv.parentElement);
+
+  const bar = document.getElementById('agg-toolbar-buttons');
+  MENU.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.className = 'agg-btn';
+    btn.textContent = opt.label;
+    btn.dataset.minutes = String(opt.val);
+    if (opt.val === currentAggMinutes) btn.classList.add('active');
+    btn.addEventListener('click', ()=>{
+      currentAggMinutes = opt.val;
+      bar.querySelectorAll('.agg-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      rebuildForCurrentSelection(); // recalcula bins, ajusta slider, redibuja
+    });
+    bar.appendChild(btn);
+  });
+}
+
+// ======= Rebuild cuando cambian: archivo, métrica o intervalo =======
+function rebuildForCurrentSelection(){
+  if (!rawRecords.length) { chartDiv.innerHTML = ''; dataTableContainer.innerHTML=''; return; }
+  const key   = dataSelector.value;
+  const title = dataSelector.options[dataSelector.selectedIndex].text;
+
+  const { labels, values } = aggregateForKey(key, currentAggMinutes);
+  currentLabels = labels;
+  currentValues = values;
+
+  setSliderBounds(currentLabels.length);
+  // Pinta y tabla para el rango inicial completo
+  plot(currentLabels, currentValues, key, title);
+  updateDataTable(currentLabels, currentValues, key);
+}
+
+// ======= Lectura de CSV =======
 csvFileInput.addEventListener('change', () => {
-    const file = csvFileInput.files[0];
-    if (!file) {
-        statusMessage.textContent = 'Por favor, selecciona un archivo CSV primero.';
-        return;
+  const file = csvFileInput.files[0];
+  if (!file) { statusMessage.textContent = 'Por favor, selecciona un archivo CSV primero.'; return; }
+
+  statusMessage.textContent = 'Leyendo y procesando archivo...';
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      parsedRows = parseCsv(e.target.result);
+      if (!parsedRows.length) {
+        statusMessage.textContent = 'El archivo CSV está vacío o no contiene datos válidos.'; 
+        chartDiv.innerHTML=''; dataTableContainer.innerHTML=''; rawRecords=[]; return;
+      }
+
+      // Construir registros crudos con timestamp
+      rawRecords = [];
+      let lastDateISO = null;
+      for (const row of parsedRows){
+        const f = row.fechaDeMedicion || row.fecha || '';
+        if (f && f.trim() !== '') lastDateISO = toIsoDateFromCSV(f);
+        if (!lastDateISO) lastDateISO = toIsoDateFromCSV(f);
+
+        const h = row.HoraMedicion || row.hora || '00:00';
+        const ts = parseTs(lastDateISO, h);
+        if (!Number.isFinite(ts)) continue;
+
+        // Mapea valores numéricos
+        const values = {};
+        Object.keys(COLORS).forEach(k => {
+          if (k in row) values[k] = Number(row[k]);
+        });
+        rawRecords.push({ ts, values });
+      }
+      // Orden cronológico ascendente
+      rawRecords.sort((a,b)=>a.ts-b.ts);
+
+      statusMessage.textContent = `Archivo "${file.name}" cargado. Registros: ${rawRecords.length}.`;
+      ensureToolbar();
+      rebuildForCurrentSelection();
+    } catch (err) {
+      console.error(err);
+      statusMessage.textContent = `Error al procesar el CSV: ${err.message}`;
+      chartDiv.innerHTML=''; dataTableContainer.innerHTML=''; rawRecords=[];
     }
-
-    statusMessage.textContent = 'Leyendo y procesando archivo...';
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        const csvText = e.target.result;
-        try {
-            const parsedData = parseCsv(csvText);
-            const parseTimeToSeconds = (timeStr) => {
-                if (!timeStr || typeof timeStr !== 'string') return 0;
-                const parts = timeStr.split(':').map(Number);
-                return parts[0] * 3600 + parts[1] * 60 + (parts[2] || 0);
-            };
-
-            currentLoadedData = parsedData; // Respeta el orden original del CSV
-
-            if (currentLoadedData.length === 0) {
-                statusMessage.textContent = 'El archivo CSV está vacío o no contiene datos válidos.';
-                chartContainer.innerHTML = '';
-                return;
-            }
-
-            statusMessage.textContent = `Archivo "${file.name}" cargado y listo para graficar.`;
-            setupRangeSliders(currentLoadedData.length);
-            dataSelector.dispatchEvent(new Event('change'));
-
-        } catch (error) {
-            console.error("Error al procesar el archivo CSV:", error);
-            statusMessage.textContent = `Error al procesar el CSV: ${error.message}`;
-            chartContainer.innerHTML = '';
-            currentLoadedData = [];
-        }
-    };
-
-    reader.onerror = () => {
-        statusMessage.textContent = 'Error al leer el archivo.';
-        console.error('Error reading file:', reader.error);
-    };
-
-    reader.readAsText(file);
+  };
+  reader.onerror = () => {
+    statusMessage.textContent = 'Error al leer el archivo.';
+    console.error('Error reading file:', reader.error);
+  };
+  reader.readAsText(file);
 });
 
-function parseCsv(csvString) {
-    const lines = csvString.split('\n').filter(line => line.trim() !== '');
-    if (lines.length === 0) return [];
-
-    const headers = lines[0].split(',').map(h => h.trim());
-    const data = [];
-
-    for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(',').map(v => v.trim());
-        if (values.length !== headers.length) continue;
-        const row = {};
-        headers.forEach((h, idx) => row[h] = values[idx]);
-        data.push(row);
-    }
-    return data;
-}
-
-function getBarColor(dataLabel) {
-    // Asignar color según el tipo de medición, igual que en las gráficas individuales
-    const label = dataLabel.toLowerCase();
-    // PM10.0 debe ir antes que PM1.0 para evitar coincidencias
-    if (label.includes('pm10')) return '#bf00ff'; // PM10.0
-    if (label.includes('pm1.0') || label.includes('pm1p0')) return 'red'; // PM1.0
-    if (label.includes('pm2.5') || label.includes('pm2_5')) return '#bfa600'; // PM2.5 amarillo oscuro
-    if (label.includes('pm4.0') || label.includes('pm4_0')) return '#00bfbf'; // PM4.0 turquesa
-    if (label.includes('co2')) return '#990000'; // CO2
-    if (label.includes('temperatura') || label.includes('temp') || label.includes('cte')) return '#006600'; // Temperatura
-    if (label.includes('humedad') || label.includes('hum') || label.includes('chu')) return '#0000cc'; // Humedad
-    if (label.includes('voc')) return '#ff8000'; // VOC
-    if (label.includes('nox')) return '#00ff00'; // NOx
-    // Puedes agregar más reglas aquí si tienes más mediciones
-    return '#000066'; // color por defecto
-}
-
-function createOrUpdatePlotly(dataToChart, dataLabel, timeLabels) {
-    chartContainer.innerHTML = '';
-
-    // Etiquetas X: formato ISO para time series
-    const start = parseInt(rangeInputs[0].value);
-    const end = parseInt(rangeInputs[1].value);
-    const customLabels = currentLoadedData.slice(start, end + 1).map(row => {
-        // Convertir fechaDeMedicion de DD-MM-YY a YYYY-MM-DD
-    let fecha = row.fechaDeMedicion || '';
-    let hora = row.HoraMedicion || '';
-    let partes = fecha.split('-');
-    // Ahora el año ya viene completo (YYYY)
-    let yyyy = partes[2];
-    let isoDate = `${yyyy}-${partes[1]?.padStart(2, '0') || ''}-${partes[0]?.padStart(2, '0') || ''}`;
-    return `${isoDate} ${hora}`;
-    });
-    const trace = {
-        x: customLabels,
-        y: dataToChart,
-        type: 'bar',
-        name: dataLabel,
-        marker: { color: getBarColor(dataLabel) }
-    };
-
-    const layout = {
-        title: {
-            text: dataLabel,
-            font: { size: 20, color: 'black', family: 'Arial', weight: 'bold' }
-        },
-        xaxis: {
-            title: {
-                text: 'Fecha y Hora de Medición',
-                font: { size: 16, color: 'black', family: 'Arial', weight: 'bold' },
-                standoff: 30
-            },
-            type: 'date',
-            tickfont: { color: 'black', size: 14, family: 'Arial', weight: 'bold' },
-            gridcolor: 'black',
-            linecolor: 'black',
-            autorange: true,
-            tickangle: -45,
-            nticks: 30,
-        },
-        yaxis: {
-            title: {
-                text: dataLabel,
-                font: { size: 16, color: 'black', family: 'Arial', weight: 'bold' }
-            },
-            tickfont: { color: 'black', size: 14, family: 'Arial', weight: 'bold' },
-            gridcolor: 'black',
-            linecolor: 'black',
-            autorange: true,
-            fixedrange: false
-        },
-        plot_bgcolor: "#cce5dc",
-        paper_bgcolor: "#cce5dc",
-        margin: { t: 50, l: 60, r: 40, b: 110 }
-    };
-
-    Plotly.newPlot(chartContainer, [trace], layout, {
-        responsive: true,
-        useResizeHandler: true
-    });
-}
-
+// ======= Eventos =======
 dataSelector.addEventListener('change', () => {
-    if (currentLoadedData.length === 0) {
-        statusMessage.textContent = "Carga un archivo CSV para graficar.";
-        chartContainer.innerHTML = '';
-        return;
-    }
-    updateChartInRange();
+  if (!rawRecords.length) { statusMessage.textContent = "Carga un archivo CSV para graficar."; return; }
+  rebuildForCurrentSelection();
 });
-
-function updateChartInRange() {
-    const key = dataSelector.value;
-    const label = dataSelector.options[dataSelector.selectedIndex].text;
-
-    const start = parseInt(rangeInputs[0].value);
-    const end = parseInt(rangeInputs[1].value);
-
-    if (start > end || currentLoadedData.length === 0) return;
-
-    const slice = currentLoadedData.slice(start, end + 1);
-    const values = slice.map(row => parseFloat(row[key])).filter(v => !isNaN(v));
-    const labels = slice.map(row => row.HoraMedicion);
-
-    createOrUpdatePlotly(values, label, labels);
-}
-
-function setupRangeSliders(length) {
-    rangeInputs[0].max = rangeInputs[1].max = length - 1;
-    rangeInputs[0].value = 0;
-    rangeInputs[1].value = length - 1;
-
-    setMinValueOutput();
-    setMaxValueOutput();
-    minRangeFill();
-    maxRangeFill();
-    MinVlaueBubbleStyle();
-    MaxVlaueBubbleStyle();
-    updateChartInRange();
-}
-
-function updateSliderUI() {
-    setMinValueOutput();
-    setMaxValueOutput();
-    minRangeFill();
-    maxRangeFill();
-    MinVlaueBubbleStyle();
-    MaxVlaueBubbleStyle();
-    updateChartInRange();
-}
-
-const minRangeFill = () => {
-    rangeTrack.style.left = (rangeInputs[0].value / rangeInputs[0].max) * 100 + "%";
-};
-const maxRangeFill = () => {
-    rangeTrack.style.right = 100 - (rangeInputs[1].value / rangeInputs[1].max) * 100 + "%";
-};
-const MinVlaueBubbleStyle = () => {
-  const percent = (rangeInputs[0].value / rangeInputs[0].max) * 100;
-  minBubble.style.left = `${percent}%`;
-};
-
-const MaxVlaueBubbleStyle = () => {
-  const percent = (rangeInputs[1].value / rangeInputs[1].max) * 100;
-  maxBubble.style.left = `${percent}%`;
-};
-const setMinValueOutput = () => {
-    minRange = parseInt(rangeInputs[0].value);
-    const row = currentLoadedData[minRange];
-    minBubble.innerHTML = row ? `${row.fechaDeMedicion || ''} ${row.HoraMedicion || ''}` : '';
-};
-const setMaxValueOutput = () => {
-    maxRange = parseInt(rangeInputs[1].value);
-    const row = currentLoadedData[maxRange];
-    maxBubble.innerHTML = row ? `${row.fechaDeMedicion || ''} ${row.HoraMedicion || ''}` : '';
-};
 
 rangeInputs.forEach((input) => {
-    input.addEventListener("input", (e) => {
-        setMinValueOutput();
-        setMaxValueOutput();
+  input.addEventListener('input', (e) => {
+    setMinValueOutput(); setMaxValueOutput();
+    minRangeFill(); maxRangeFill();
+    MinVlaueBubbleStyle(); MaxVlaueBubbleStyle();
 
-        minRangeFill();
-        maxRangeFill();
+    const gap = Math.min(MIN_SLIDER_GAP, Math.max(0, (rangeInputs[0].max|0)));
+    const minIdx = parseInt(rangeInputs[0].value);
+    const maxIdx = parseInt(rangeInputs[1].value);
 
-        MinVlaueBubbleStyle();
-        MaxVlaueBubbleStyle();
+    if (maxIdx - minIdx < gap) {
+      if (e.target.className === "min") {
+        rangeInputs[0].value = Math.max(0, maxIdx - gap);
+        setMinValueOutput(); minRangeFill(); MinVlaueBubbleStyle();
+        e.target.style.zIndex = "2";
+      } else {
+        rangeInputs[1].value = Math.min(rangeInputs[1].max, minIdx + gap);
+        setMaxValueOutput(); maxRangeFill(); MaxVlaueBubbleStyle();
+        e.target.style.zIndex = "2";
+      }
+    }
 
-        if (maxRange - minRange < minRangeValueGap) {
-            if (e.target.className === "min") {
-                rangeInputs[0].value = maxRange - minRangeValueGap;
-                setMinValueOutput();
-                minRangeFill();
-                MinVlaueBubbleStyle();
-                e.target.style.zIndex = "2";
-            } else {
-                rangeInputs[1].value = minRange + minRangeValueGap;
-                e.target.style.zIndex = "2";
-                setMaxValueOutput();
-                maxRangeFill();
-                MaxVlaueBubbleStyle();
-            }
-        }
+    // Redibuja SOLO el rango visible
+    const key   = dataSelector.value;
+    const title = dataSelector.options[dataSelector.selectedIndex].text;
+    const start = parseInt(rangeInputs[0].value);
+    const end   = parseInt(rangeInputs[1].value);
 
-        updateChartInRange();
-    });
+    const labels = currentLabels.slice(start, end+1);
+    const values = currentValues.slice(start, end+1);
+    plot(labels, values, key, title);
+    updateDataTable(currentLabels, currentValues, key);
+  });
 });
-
-const dataTableContainer = document.createElement('div');
-dataTableContainer.id = 'dataTable';
-dataTableContainer.style.margin = '40px auto 20px auto'; // margen superior aumentado para separar de la gráfica
-dataTableContainer.style.maxWidth = '1200px';
-dataTableContainer.style.overflowX = 'auto';
-dataTableContainer.style.borderTop = 'none'; // asegurarse que no haya línea negra
-document.body.appendChild(dataTableContainer);
-
-const ROWS_PER_PAGE = 20;
-let currentPage = 1;
-
-function updateDataTable(dataSlice, key) {
-  if (!Array.isArray(dataSlice)) return;
-
-    const table = document.createElement('table');
-    const thead = document.createElement('thead');
-    const headerRow = document.createElement('tr');
-    ['#', 'HoraMedicion', 'FechaMedicion', key.toUpperCase()].forEach(text => {
-        const th = document.createElement('th');
-        th.textContent = text;
-        headerRow.appendChild(th);
-    });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    const tbody = document.createElement('tbody');
-    dataSlice.forEach((row, i) => {
-        const tr = document.createElement('tr');
-
-        const tdIndex = document.createElement('td');
-        tdIndex.textContent = i;
-        tr.appendChild(tdIndex);
-
-        const tdTime = document.createElement('td');
-        tdTime.textContent = row.HoraMedicion || '-';
-        tr.appendChild(tdTime);
-
-        const tdFecha = document.createElement('td');
-        tdFecha.textContent = row.fechaDeMedicion || '-';
-        tr.appendChild(tdFecha);
-
-        const tdValue = document.createElement('td');
-        tdValue.textContent = row[key] || '-';
-        tr.appendChild(tdValue);
-
-        tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-
-    dataTableContainer.innerHTML = '';
-    dataTableContainer.appendChild(table);
-}
-
-function updateChartInRange() {
-  const key = dataSelector.value;
-  const label = dataSelector.options[dataSelector.selectedIndex].text;
-
-  const start = parseInt(rangeInputs[0].value);
-  const end = parseInt(rangeInputs[1].value);
-
-  if (start > end || currentLoadedData.length === 0) return;
-
-  const slice = currentLoadedData.slice(start, end + 1);
-  const values = slice.map(row => parseFloat(row[key])).filter(v => !isNaN(v));
-    const labels = slice.map(row => row.HoraMedicion);
-
-  createOrUpdatePlotly(values, label, labels);
-  currentPage = 1;
-  updateDataTable(slice, key);
-}
