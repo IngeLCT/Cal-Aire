@@ -246,43 +246,50 @@ function aggregateForKey(key, minutes){
 function plot(labels, values, key, titleText) {
   const idx = labels.map((_,i)=>i);
   const ticktext = buildTickText(labels);
+
   const trace = {
     x: idx,
     y: values,
-    type: 'bar',
+    type: 'bar',           // si usas área/linea: 'scatter', mode:'lines', fill:'tozeroy'
     name: titleText,
     marker: { color: getColorForKey(key) }
   };
+
   const layout = {
     xaxis: {
-      type: 'category',
-      tickmode:'array',
+      type: 'category',            // si usas fechas reales, puedes dejar 'date'
+      tickmode: 'array',
       tickvals: idx,
       ticktext,
-      tickangle:-45,
-      automargin:true,
-      gridcolor:'black',
-      linecolor:'black',
-      autorange:true,
+      tickangle: -45,
+      automargin: true,
+      // --- lo importante ---
+      rangeslider: { visible: false }, // quita el slider de Plotly
+      showgrid: false,                 // sin grilla en X
+      zeroline: false,
+      showline: true,
       title: { text:'<b>Fecha y Hora de Medición</b>', font:{ size:16,color:'black',family:'Arial',weight:'bold' }, standoff: 36 },
       tickfont: { color:'black', size:14, family:'Arial', weight:'bold' }
     },
     yaxis: {
       title: { text: `<b>${titleText}</b>`, font:{ size:16,color:'black',family:'Arial',weight:'bold' } },
       tickfont: { color:'black', size:14, family:'Arial', weight:'bold' },
-      rangemode:'tozero',
-      gridcolor:'black',
-      linecolor:'black',
-      autorange:true,
-      fixedrange:false
+      rangemode: 'tozero',
+      autorange: true,
+      fixedrange: false,
+      // --- lo importante ---
+      showgrid: false,                // sin grilla en Y
+      zeroline: false,
+      showline: true
     },
-    margin:{ t:20, l:60, r:40, b:130 },
-    bargap:0.2,
-    paper_bgcolor:'#cce5dc',
-    plot_bgcolor:'#cce5dc',
-    showlegend:false
+    margin: { t:20, l:60, r:40, b:130 },
+    bargap: 0.2,
+    paper_bgcolor: '#cce5dc',
+    plot_bgcolor:  '#cce5dc',
+    showlegend: false
   };
-  Plotly.newPlot(chartDiv, [trace], layout, {responsive:true, useResizeHandler:true});
+
+  Plotly.newPlot(chartDiv, [trace], layout, { responsive:true, useResizeHandler:true });
   updateYAxisRange(chartDiv.id, values);
 }
 
