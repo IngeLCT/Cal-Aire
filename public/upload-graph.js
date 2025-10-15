@@ -67,11 +67,8 @@ function makeBinLabel(binStartMs, minutes, mode = LABEL_MODE){
   const tBeg  = fmtTime(binStartMs);
   const tEnd  = fmtTime(binStartMs + minutes*60000);
 
-  // --- FIX: si minutes === 5 y LABEL_MODE === 'range', NO mostramos rango
-  if (minutes === SAMPLE_BASE_MIN) {
-    // siempre una sola hora para 5 min
-    return `${date} ${tBeg}`;
-  }
+  // 5 min nunca como rango visual
+  if (minutes === SAMPLE_BASE_MIN) return `${date} ${tBeg}`;
 
   if (mode === 'end')   return `${date} ${tEnd}`;
   if (mode === 'range') return `${date} ${tBeg}–${tEnd}`;
@@ -131,10 +128,11 @@ function buildTickText(labels) {
       }
       .agg-btn:hover{ box-shadow:0 1px 0 rgba(0,0,0,.35); }
       .agg-btn.active{ transform:scale(1.06); font-weight:bold; font-size:14px; background:#d9efe7; }
-      /* --- Tabla historial: forzar fondo claro/transparente y texto negro --- */
-      #dataTable table { width:100%; border-collapse: collapse; background: transparent; color:#000; }
-      #dataTable th, #dataTable td { background: transparent; color:#000; border:1px solid #666; padding:4px 6px; text-align:left; }
-      #dataTable thead th { font-weight:700; }
+
+      /* ---- Tabla historial ---- */
+      #dataTable table { width:100%; border-collapse: collapse; background:#fff; color:#000; }
+      #dataTable thead th { background:#e9f4ef; color:#000; border:1px solid #666; padding:6px 8px; text-align:left; }
+      #dataTable td { background:#fff; color:#000; border:1px solid #666; padding:6px 8px; text-align:left; }
     `;
     document.head.appendChild(style);
   }
@@ -212,6 +210,25 @@ function updateYAxisRange(divId, yValues){
   Plotly.relayout(divId, { 'yaxis.autorange': false, 'yaxis.range': [0, upper] });
 }
 
+// ----- Ticks X: máximo 24 -----
+function getTickArrays(labels, maxTicks = 24){
+  const n = labels.length;
+  if (n === 0) return { tickvals: [], ticktext: [] };
+
+  // Construimos todo el ticktext y luego muestreamos para conservar las fechas correctas
+  const fullTickText = buildTickText(labels);
+
+  if (n <= maxTicks) {
+    return { tickvals: labels.map((_,i)=>i), ticktext: fullTickText };
+  }
+  const step = Math.ceil(n / maxTicks);
+  const tickvals = [];
+  for (let i=0; i<n; i+=step) tickvals.push(i);
+  if (tickvals[tickvals.length-1] !== n-1) tickvals.push(n-1);
+  const ticktext = tickvals.map(i => fullTickText[i]);
+  return { tickvals, ticktext };
+}
+
 // ======= Agregador =======
 function aggregateForKey(key, minutes){
   if (minutes === SAMPLE_BASE_MIN) {
@@ -245,27 +262,26 @@ function aggregateForKey(key, minutes){
 // ======= Pintado =======
 function plot(labels, values, key, titleText) {
   const idx = labels.map((_,i)=>i);
-  const ticktext = buildTickText(labels);
+  const { tickvals, ticktext } = getTickArrays(labels, 24);
 
   const trace = {
     x: idx,
     y: values,
-    type: 'bar',           // si usas área/linea: 'scatter', mode:'lines', fill:'tozeroy'
+    type: 'bar',
     name: titleText,
     marker: { color: getColorForKey(key) }
   };
-
   const layout = {
     xaxis: {
-      type: 'category',            // si usas fechas reales, puedes dejar 'date'
-      tickmode: 'array',
-      tickvals: idx,
+      type: 'category',
+      tickmode:'array',
+      tickvals,
       ticktext,
-      tickangle: -45,
-      automargin: true,
-      // --- lo importante ---
-      rangeslider: { visible: false }, // quita el slider de Plotly
-      showgrid: false,                 // sin grilla en X
+      tickangle:-45,
+      automargin:true,
+      // sin slider Plotly y sin grillas
+      rangeslider: { visible: false },
+      showgrid: false,
       zeroline: false,
       showline: true,
       title: { text:'<b>Fecha y Hora de Medición</b>', font:{ size:16,color:'black',family:'Arial',weight:'bold' }, standoff: 36 },
@@ -274,22 +290,21 @@ function plot(labels, values, key, titleText) {
     yaxis: {
       title: { text: `<b>${titleText}</b>`, font:{ size:16,color:'black',family:'Arial',weight:'bold' } },
       tickfont: { color:'black', size:14, family:'Arial', weight:'bold' },
-      rangemode: 'tozero',
-      autorange: true,
-      fixedrange: false,
-      // --- lo importante ---
-      showgrid: false,                // sin grilla en Y
+      rangemode:'tozero',
+      autorange:true,
+      fixedrange:false,
+      // sin grillas
+      showgrid: false,
       zeroline: false,
       showline: true
     },
-    margin: { t:20, l:60, r:40, b:130 },
-    bargap: 0.2,
-    paper_bgcolor: '#cce5dc',
-    plot_bgcolor:  '#cce5dc',
-    showlegend: false
+    margin:{ t:20, l:60, r:40, b:130 },
+    bargap:0.2,
+    paper_bgcolor:'#cce5dc',
+    plot_bgcolor:'#cce5dc',
+    showlegend:false
   };
-
-  Plotly.newPlot(chartDiv, [trace], layout, { responsive:true, useResizeHandler:true });
+  Plotly.newPlot(chartDiv, [trace], layout, {responsive:true, useResizeHandler:true});
   updateYAxisRange(chartDiv.id, values);
 }
 
@@ -314,13 +329,20 @@ function updateSliderUI(){
 }
 
 // ======= Tabla =======
+function prettyValue(key, v){
+  if (!Number.isFinite(v)) return '-';
+  if (key === 'HumedadRelativa') return String(Math.round(v)); // entero
+  // 2 decimales
+  return (Math.round(v*100)/100).toFixed(2);
+}
+
 function updateDataTable(labels, values, key, minutes){
   const table = document.createElement('table');
   table.id = 'uploadTable';
   const thead = document.createElement('thead');
   const headerRow = document.createElement('tr');
 
-  const intervalText = intervalLabel(minutes); // ← “5 min”, “1 hr”, etc.
+  const intervalText = intervalLabel(minutes); // “5 min”, “1 hr”, etc.
   ['#', `Fecha y Hora (${intervalText})`, key.toUpperCase()].forEach(text => {
     const th = document.createElement('th'); th.textContent = text; headerRow.appendChild(th);
   });
@@ -331,7 +353,7 @@ function updateDataTable(labels, values, key, minutes){
     const tr = document.createElement('tr');
     const tdIdx   = document.createElement('td'); tdIdx.textContent = j; tr.appendChild(tdIdx);
     const tdLab   = document.createElement('td'); tdLab.textContent = labels[i] || '-'; tr.appendChild(tdLab);
-    const tdValue = document.createElement('td'); tdValue.textContent = (values[i] ?? '-'); tr.appendChild(tdValue);
+    const tdValue = document.createElement('td'); tdValue.textContent = prettyValue(key, values[i]); tr.appendChild(tdValue);
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
