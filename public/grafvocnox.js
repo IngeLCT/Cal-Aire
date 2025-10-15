@@ -116,13 +116,21 @@
    * Nota: SIEMPRE usa la fecha del INICIO del bin para mantener el
    * marcador de cambio de día en el “límite izquierdo”.
    */
+  
   function makeBinLabel(binStartMs, minutes, mode = LABEL_MODE){
     const date  = fmtDate(binStartMs);
     const tBeg  = fmtTime(binStartMs);
     const tEnd  = fmtTime(binStartMs + minutes*60000);
+
+    // --- FIX: si minutes === 5 y LABEL_MODE === 'range', NO mostramos rango
+    if (minutes === SAMPLE_BASE_MIN) {
+      // siempre una sola hora para 5 min
+      return `${date} ${tBeg}`;
+    }
+
     if (mode === 'end')   return `${date} ${tEnd}`;
     if (mode === 'range') return `${date} ${tBeg}–${tEnd}`;
-    return `${date} ${tBeg}`; // 'start' (por defecto)
+    return `${date} ${tBeg}`; // start
   }
 
   /**
