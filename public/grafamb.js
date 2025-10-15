@@ -67,43 +67,65 @@
       return `${yyyy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
     }
   }
+
   function parseTsFrom(isoDate, v) {
     const raw = (v && (v.hora || v.tiempo)) ? (v.hora || v.tiempo) : '00:00';
     const hhmmss = /^\d{1,2}:\d{2}$/.test(raw) ? `${raw}:00` : raw;
     const ms = Date.parse(`${isoDate}T${hhmmss}`);
     return Number.isFinite(ms) ? ms : null;
   }
+
   function floorToBin(ts, minutes) {
     const size = minutes * 60000;
     return ts - (ts % size);
   }
+
   function avg(arr) {
     const v = arr.filter(n => Number.isFinite(n));
     if (!v.length) return null;
     return v.reduce((a,b)=>a+b,0)/v.length;
   }
+
   function labelFromMs(ms) {
     const d=new Date(ms);
     const yyyy=d.getFullYear(), mm=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0');
     const hh=String(d.getHours()).padStart(2,'0'), mi=String(d.getMinutes()).padStart(2,'0');
     return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
   }
+
   // Ticktext amigable para eje categórico (con fecha en saltos)
   function buildTickText(labels) {
-    const t = []; let prevDate=null; let seen=false;
-    for (let i=0;i<labels.length;i++){
-      const s = String(labels[i] ?? '');
-      const m = s.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})/);
-      let datePart='', timePart='';
-      if (m) { datePart=m[1]; timePart=m[2]; }
-      const ddmmyyyy = datePart ? datePart.split('-').reverse().join('-') : '';
-      const isFirst = (!seen && !!datePart);
-      const changed = datePart && prevDate && (datePart !== prevDate);
-      const showDate = isFirst || changed;
-      t.push(showDate && datePart ? `${timePart}<br>${ddmmyyyy}` : (timePart || s));
-      if (datePart) { if(!seen) seen=true; prevDate=datePart; }
+    // 1) Parseamos fecha y hora de cada etiqueta
+    const items = labels.map(s => {
+      const str = String(s ?? '');
+      const m = str.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})/);
+      return {
+        date: m ? m[1] : '',          // yyyy-mm-dd
+        time: m ? m[2] : str          // hh:mm (o lo que haya)
+      };
+    });
+
+    // 2) Por defecto mostramos solo la hora
+    const out = items.map(it => it.time);
+
+    // 3) Cuando cambia la fecha entre i-1 e i, ponemos la FECHA en i-1
+    let curr = items[0]?.date || '';
+    for (let i = 1; i < items.length; i++) {
+      const d = items[i].date;
+      if (d && curr && d !== curr) {
+        const ddmmyyyy = curr.split('-').reverse().join('-');
+        out[i - 1] = `${items[i - 1].time}<br>${ddmmyyyy}`; // ← fecha en el tick previo
+        curr = d;
+      }
     }
-    return t;
+
+    // 4) Si todo el tramo visible es de un solo día, añade la fecha al primer tick
+    if (!out.some(t => String(t).includes('<br>')) && items[0]?.date) {
+      const ddmmyyyy = items[0].date.split('-').reverse().join('-');
+      out[0] = `${items[0].time}<br>${ddmmyyyy}`;
+    }
+
+    return out;
   }
 
   // ===================== Rango dinámico del eje Y =====================
@@ -233,7 +255,7 @@
     }
 
     // Requisito de completitud: al menos minutes / SAMPLE_BASE_MIN mediciones en el bin
-    const required = Math.max(1, Math.round(minutes / SAMPLE_BASE_MIN));
+    const required = Math.max(1, Math.ceil((minutes / SAMPLE_BASE_MIN) * 0.9));
 
     // Solo bins completos
     const completeKeys = Array.from(groups.keys())
