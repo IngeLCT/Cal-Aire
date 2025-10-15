@@ -238,7 +238,8 @@
     }
 
     // Bin completo = al menos minutes / SAMPLE_BASE_MIN muestras
-    const required = Math.max(1, Math.round(minutes / SAMPLE_BASE_MIN));
+    //Se agrego multiplicacion por 0.9 para tomar como valido si tiene el 90% de los datos
+    const required = Math.max(1, Math.ceil((minutes / SAMPLE_BASE_MIN) * 0.9));
     const completeKeys = Array.from(groups.keys())
       .filter(k => groups.get(k).count >= required)
       .sort((a,b)=>a-b);
