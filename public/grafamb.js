@@ -20,10 +20,10 @@
         display:flex; flex-direction:column; gap:6px; margin:8px 0 4px 0; width:100%;
       }
       .agg-chart-title{
-        font-weight:bold; font-size:20px; color:#000; text-align:center; line-height:1.1;
+        font-weight:bold; font-size:20px; font-family:Arial; color:#000; text-align:center; line-height:1.1;
       }
       .agg-toolbar-label{
-        font-weight:bold; font-size:16px; color:#000; text-align:left;
+        font-weight:bold; font-size:16px; font-family:Arial; color:#000; text-align:left;
       }
       .agg-toolbar{
         display:flex; gap:6px; flex-wrap:wrap; align-items:center; justify-content:flex-start;
@@ -33,7 +33,7 @@
         cursor:pointer; user-select:none;
         padding:6px 10px; border-radius:10px;
         background:#e9f4ef; border:2px solid #2a2a2a;
-        font-size:12px; font-weight:600; color:#000;
+        font-size:12px; font-weight:600; font-family:Arial; color:#000;
         width: var(--agg-btn-w);
         text-align:center;
         transition: transform 0.12s ease, box-shadow 0.12s ease, font-size 0.12s ease;
@@ -42,6 +42,7 @@
       .agg-btn.active{
         transform: scale(1.06);  /* “crece” sin afectar layout */
         font-weight:bold;
+        font-family:Arial;
         font-size:14px;
         background:#d9efe7;
       }
