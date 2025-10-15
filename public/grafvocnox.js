@@ -92,7 +92,7 @@
 
   // ===================== Etiquetado flexible del eje X =====================
   // Opciones: 'start' | 'end' | 'range'
-  const LABEL_MODE = 'start'; // cámbialo a 'end' o 'range' cuando quieras
+  const LABEL_MODE = 'range'; // cámbialo a 'end' o 'range' cuando quieras
 
   function fmt2(n){ return String(n).padStart(2,'0'); }
   function fmtDate(ms){
