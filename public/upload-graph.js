@@ -39,7 +39,7 @@ const COLORS = {
 
 // ======= Intervalos (selector) =======
 const MENU = [
-  { label:'Todo (5 min)', val: 5    },
+  { label:'5 min', val: 5    },
   { label:'15 min',       val: 15   },
   { label:'30 min',       val: 30   },
   { label:'1 hr',         val: 60   },
@@ -58,23 +58,31 @@ const DATE_STAMP_MODE = 'left-next';
 
 // ======= Helpers de formato =======
 function fmt2(n){ return String(n).padStart(2,'0'); }
+
 function fmtDate(ms){
   const d = new Date(ms);
   return `${d.getFullYear()}-${fmt2(d.getMonth()+1)}-${fmt2(d.getDate())}`;
 }
+
 function fmtTime(ms){
   const d = new Date(ms);
   return `${fmt2(d.getHours())}:${fmt2(d.getMinutes())}`;
 }
+
 function ddmmyyyy(ms){
   const d = new Date(ms);
   return `${fmt2(d.getDate())}-${fmt2(d.getMonth()+1)}-${d.getFullYear()}`;
 }
+
 function sameDay(a,b){
   const da=new Date(a), db=new Date(b);
   return da.getFullYear()===db.getFullYear() && da.getMonth()===db.getMonth() && da.getDate()===db.getDate();
 }
 
+function startOfLocalDay(ts) {
+  const d = new Date(ts);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); // 00:00 local
+}
 /**
  * Etiqueta del bin según modo. Para 5 min NUNCA mostramos rango (siempre hora simple).
  */
@@ -111,7 +119,9 @@ function intervalLabel(minutes){
   if (minutes === 1440) return '24 hr';
   return `${minutes} min`;
 }
+
 function floorToBin(ts, minutes){ const w = minutes*60000; return ts - (ts % w); }
+
 function parseCsv(text){
   const lines = text.split('\n').filter(l => l.trim() !== '');
   if (!lines.length) return [];
@@ -126,6 +136,7 @@ function parseCsv(text){
   }
   return rows;
 }
+
 function toIsoDateFromCSV(fechaStr) {
   if (!fechaStr) {
     const d=new Date(); return `${d.getFullYear()}-${fmt2(d.getMonth()+1)}-${fmt2(d.getDate())}`;
@@ -140,15 +151,18 @@ function toIsoDateFromCSV(fechaStr) {
     return `${yyyy}-${fmt2(mm)}-${fmt2(dd)}`;
   }
 }
+
 function parseTs(dateISO, horaStr){
   const raw = String(horaStr||'00:00');
   const hhmmss = /^\d{1,2}:\d{2}$/.test(raw) ? `${raw}:00` : raw;
   const ms = Date.parse(`${dateISO}T${hhmmss}`);
   return Number.isFinite(ms) ? ms : null;
 }
+
 function getColorForKey(key) {
   return COLORS[key] || '#000066';
 }
+
 // Eje Y dinámico: [0, 2×máximo]
 function updateYAxisRange(divId, yValues){
   const finite = (yValues||[]).filter(v => Number.isFinite(v) && v >= 0);
@@ -199,7 +213,12 @@ function aggregateForKey(key, minutes){
   for (const r of rawRecords){
     const v = Number(r.values[key]);
     if (!Number.isFinite(v)) continue;
-    const bin = floorToBin(r.ts, minutes);
+
+    // 24 hr: anclar a medianoche LOCAL; otros intervalos: bin estándar
+    const bin = (minutes === 1440)
+      ? startOfLocalDay(r.ts)
+      : floorToBin(r.ts, minutes);
+
     const g = byBin.get(bin) || { sum:0, count:0 };
     g.sum += v; g.count += 1;
     byBin.set(bin, g);
@@ -214,8 +233,14 @@ function aggregateForKey(key, minutes){
   const labels = bins.map(b => makeBinLabel(b, minutes, LABEL_MODE));
   const values = bins.map(b => byBin.get(b).sum / byBin.get(b).count);
 
-  // xTs = tiempo representativo del bin (inicio por defecto; si LABEL_MODE === 'end', usar fin)
-  const xTs = bins.map(b => (LABEL_MODE === 'end') ? (b + minutes*60000) : b);
+  // xTs: para 24h usar 00:00 local; para otros, inicio/fin según LABEL_MODE
+  let xTs;
+  if (minutes === 1440) {
+    xTs = bins.map(b => b);           // ← 00:00 local
+    // Si prefieres 00:01: xTs = bins.map(b => b + 60000);
+  } else {
+    xTs = bins.map(b => (LABEL_MODE === 'end') ? (b + minutes*60000) : b);
+  }
 
   return { labels, values, xTs };
 }
