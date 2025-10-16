@@ -1,5 +1,5 @@
 // upload-graph.js — Historial desde CSV con selector de intervalos, slider propio, eje X temporal real,
-// máx. 24 ticks, tabla sincronizada, etiquetas de fecha/hora correctas y eje Y dinámico.
+// máx. 24 ticks, tabla sincronizada (estilada solo con style.css) y eje Y dinámico.
 
 // ======= DOM =======
 const csvFileInput   = document.getElementById('csvFileInput');
@@ -13,7 +13,7 @@ const rangeTrack     = document.getElementById('range_track');
 const minBubble      = document.querySelector('.minvalue');
 const maxBubble      = document.querySelector('.maxvalue');
 
-// Tabla
+// Tabla (usa el contenedor del HTML con id="dataTable" y estilos de style.css)
 const dataTableContainer = document.getElementById('dataTable');
 
 // ======= Constantes =======
@@ -89,33 +89,6 @@ function makeBinLabel(binStartMs, minutes, mode = LABEL_MODE){
   if (mode === 'range') return `${date} ${tBeg}–${tEnd}`;
   return `${date} ${tBeg}`; // start
 }
-
-// ======= CSS selector + tabla =======
-(function injectCSS(){
-  if (!document.getElementById('agg-toolbar-css')) {
-    const style = document.createElement('style');
-    style.id = 'agg-toolbar-css';
-    style.textContent = `
-      .agg-toolbar-wrap{ display:flex; flex-direction:column; gap:6px; margin:8px 0 4px 0; width:100%; }
-      .agg-chart-title{ font-weight:bold; font-size:20px; color:#000; text-align:center; line-height:1.1; }
-      .agg-toolbar-label{ font-weight:bold; font-size:16px; color:#000; text-align:left; }
-      .agg-toolbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; justify-content:flex-start; --agg-btn-w:80px; }
-      .agg-btn{
-        cursor:pointer; user-select:none; padding:6px 10px; border-radius:10px;
-        background:#e9f4ef; border:2px solid #2a2a2a; font-size:12px; font-weight:600; color:#000;
-        width:var(--agg-btn-w); text-align:center; transition:transform .12s, box-shadow .12s, font-size .12s;
-      }
-      .agg-btn:hover{ box-shadow:0 1px 0 rgba(0,0,0,.35); }
-      .agg-btn.active{ transform:scale(1.06); font-weight:bold; font-size:14px; background:#d9efe7; }
-
-      /* ---- Tabla historial ---- */
-      #dataTable table { width:100%; border-collapse: collapse; background:#fff; color:#000; }
-      #dataTable thead th { background:#e9f4ef; color:#000; border:1px solid #666; padding:6px 8px; text-align:left; }
-      #dataTable td { background:#fff; color:#000; border:1px solid #666; padding:6px 8px; text-align:left; }
-    `;
-    document.head.appendChild(style);
-  }
-})();
 
 // ======= Estado =======
 let parsedRows        = [];     // filas CSV
@@ -312,7 +285,7 @@ function updateSliderUI(){
   MinVlaueBubbleStyle(); MaxVlaueBubbleStyle();
 }
 
-// ======= Tabla =======
+// ======= Tabla (usa estilos de style.css) =======
 function prettyValue(key, v){
   if (!Number.isFinite(v)) return '-';
   if (key === 'HumedadRelativa') return String(Math.round(v)); // entero
@@ -339,10 +312,34 @@ function updateDataTable(labels, values, key, minutes){
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
-  dataTableContainer.innerHTML = ''; dataTableContainer.appendChild(table);
+
+  // Limpia y monta (los estilos vienen de style.css -> #dataTable, th/td, etc.)
+  dataTableContainer.innerHTML = '';
+  dataTableContainer.appendChild(table);
 }
 
-// ======= Toolbar de intervalos =======
+// ======= Toolbar de intervalos (solo estilos del selector; no tocamos tabla) =======
+(function injectToolbarCSS(){
+  if (!document.getElementById('agg-toolbar-css')) {
+    const style = document.createElement('style');
+    style.id = 'agg-toolbar-css';
+    style.textContent = `
+      .agg-toolbar-wrap{ display:flex; flex-direction:column; gap:6px; margin:8px 0 4px 0; width:100%; }
+      .agg-chart-title{ font-weight:bold; font-size:20px; color:#000; text-align:center; line-height:1.1; }
+      .agg-toolbar-label{ font-weight:bold; font-size:16px; color:#000; text-align:left; }
+      .agg-toolbar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; justify-content:flex-start; --agg-btn-w:80px; }
+      .agg-btn{
+        cursor:pointer; user-select:none; padding:6px 10px; border-radius:10px;
+        background:#e9f4ef; border:2px solid #2a2a2a; font-size:12px; font-weight:600; color:#000;
+        width:var(--agg-btn-w); text-align:center; transition:transform .12s, box-shadow .12s, font-size .12s;
+      }
+      .agg-btn:hover{ box-shadow:0 1px 0 rgba(0,0,0,.35); }
+      .agg-btn.active{ transform:scale(1.06); font-weight:bold; font-size:14px; background:#d9efe7; }
+    `;
+    document.head.appendChild(style);
+  }
+})();
+
 function ensureToolbar(){
   if (document.getElementById('agg-toolbar-upload')) return;
   const wrapper = document.createElement('div');
