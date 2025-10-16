@@ -220,19 +220,15 @@ function aggregateForKey(key, minutes){
   return { labels, values, xTs };
 }
 
-// ======= Plot (eje X temporal real, sin slider Plotly, sin grillas, máx. 24 ticks) =======
+// ======= Plot (BARRAS, eje X temporal real, sin slider Plotly, sin grillas, máx. 24 ticks) =======
 function plot(labels, values, xTs, key, titleText) {
   const { tickvals, ticktext } = buildTicksFromTimes(xTs, 24);
 
   const trace = {
-    x: xTs,               // ← tiempos reales
+    x: xTs,               // tiempos reales (Date axis)
     y: values,
-    type: 'scatter',
-    mode: 'lines',
-    fill: 'tozeroy',      // área
+    type: 'bar',          // ← ahora BARRAS
     name: titleText,
-    line: { width: 1.5 },
-    fillcolor: getColorForKey(key),
     marker: { color: getColorForKey(key) }
   };
 
@@ -256,6 +252,7 @@ function plot(labels, values, xTs, key, titleText) {
       showgrid:false, zeroline:false, showline:true
     },
     margin:{ t:20, l:60, r:40, b:130 },
+    bargap:0.2,           // separación entre barras
     paper_bgcolor:'#cce5dc',
     plot_bgcolor:'#cce5dc',
     showlegend:false
