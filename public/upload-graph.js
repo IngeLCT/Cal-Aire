@@ -1,24 +1,27 @@
-// upload-graph.js — Historial desde CSV con selector de intervalos + slider propio y tabla sincronizada (Plotly)
+// upload-graph.js — Historial desde CSV con selector de intervalos, slider propio, eje X temporal real,
+// máx. 24 ticks, tabla sincronizada, etiquetas de fecha/hora correctas y eje Y dinámico.
 
 // ======= DOM =======
-const csvFileInput = document.getElementById('csvFileInput');
-const statusMessage = document.getElementById('statusMessage');
-const dataSelector  = document.getElementById('dataSelector');
-const chartDiv      = document.getElementById('myChart');
+const csvFileInput   = document.getElementById('csvFileInput');
+const statusMessage  = document.getElementById('statusMessage');
+const dataSelector   = document.getElementById('dataSelector');
+const chartDiv       = document.getElementById('myChart');
 
 // Slider (doble) existente en tu HTML (NO Plotly)
-const rangeInputs   = document.querySelectorAll('input[type="range"]');
-const rangeTrack    = document.getElementById('range_track');
-const minBubble     = document.querySelector('.minvalue');
-const maxBubble     = document.querySelector('.maxvalue');
+const rangeInputs    = document.querySelectorAll('input[type="range"]');
+const rangeTrack     = document.getElementById('range_track');
+const minBubble      = document.querySelector('.minvalue');
+const maxBubble      = document.querySelector('.maxvalue');
 
 // Tabla
 const dataTableContainer = document.getElementById('dataTable');
 
 // ======= Constantes =======
-const SAMPLE_BASE_MIN    = 5;      // frecuencia de muestreo base
-const COVERAGE_FRACTION  = 0.90;   // umbral de cobertura de bin (90%)
-const MIN_SLIDER_GAP     = 6;      // separación mínima entre manijas
+const SAMPLE_BASE_MIN   = 5;     // frecuencia de muestreo base
+const COVERAGE_FRACTION = 0.90;  // umbral de cobertura de bin (90%)
+const MIN_SLIDER_GAP    = 6;     // separación mínima entre manijas del slider
+
+// Colores por métrica (respetar)
 const COLORS = {
   // Partículas
   'pm1.0':  'red',
@@ -36,14 +39,14 @@ const COLORS = {
 
 // ======= Intervalos (selector) =======
 const MENU = [
-  { label:'Todo (5 min)', val: 5   },
-  { label:'15 min',       val: 15  },
-  { label:'30 min',       val: 30  },
-  { label:'1 hr',         val: 60  },
-  { label:'2 hr',         val: 120 },
-  { label:'6 hr',         val: 360 },
-  { label:'12 hr',        val: 720 },
-  { label:'24 hr',        val: 1440 },
+  { label:'Todo (5 min)', val: 5    },
+  { label:'15 min',       val: 15   },
+  { label:'30 min',       val: 30   },
+  { label:'1 hr',         val: 60   },
+  { label:'2 hr',         val: 120  },
+  { label:'6 hr',         val: 360  },
+  { label:'12 hr',        val: 720  },
+  { label:'24 hr',        val: 1440 }
 ];
 
 // ======= Etiquetado flexible del eje X =======
@@ -53,6 +56,7 @@ const LABEL_MODE = 'start';
 // Estampado de fecha en el cambio de día: 'left-prev' | 'left-next' | 'right' | 'both'
 const DATE_STAMP_MODE = 'left-next';
 
+// ======= Helpers de formato =======
 function fmt2(n){ return String(n).padStart(2,'0'); }
 function fmtDate(ms){
   const d = new Date(ms);
@@ -62,56 +66,31 @@ function fmtTime(ms){
   const d = new Date(ms);
   return `${fmt2(d.getHours())}:${fmt2(d.getMinutes())}`;
 }
+function ddmmyyyy(ms){
+  const d = new Date(ms);
+  return `${fmt2(d.getDate())}-${fmt2(d.getMonth()+1)}-${d.getFullYear()}`;
+}
+function sameDay(a,b){
+  const da=new Date(a), db=new Date(b);
+  return da.getFullYear()===db.getFullYear() && da.getMonth()===db.getMonth() && da.getDate()===db.getDate();
+}
+
+/**
+ * Etiqueta del bin según modo. Para 5 min NUNCA mostramos rango (siempre hora simple).
+ */
 function makeBinLabel(binStartMs, minutes, mode = LABEL_MODE){
   const date  = fmtDate(binStartMs);
   const tBeg  = fmtTime(binStartMs);
   const tEnd  = fmtTime(binStartMs + minutes*60000);
 
-  // 5 min nunca como rango visual
-  if (minutes === SAMPLE_BASE_MIN) return `${date} ${tBeg}`;
+  if (minutes === SAMPLE_BASE_MIN) return `${date} ${tBeg}`; // 5 min: no rango
 
   if (mode === 'end')   return `${date} ${tEnd}`;
   if (mode === 'range') return `${date} ${tBeg}–${tEnd}`;
   return `${date} ${tBeg}`; // start
 }
-function buildTickText(labels) {
-  // Conserva todo el texto de hora: "hh:mm" o "hh:mm–hh:mm" tras la fecha
-  const items = labels.map(s => {
-    const str = String(s ?? '');
-    const m = str.match(/^(\d{4}-\d{2}-\d{2})\s+(.+)$/);
-    return { date: m ? m[1] : '', timeLabel: m ? m[2] : str };
-  });
-  const out = items.map(it => it.timeLabel);
-  let curr = items[0]?.date || '';
-  let stamped = false;
 
-  for (let i = 1; i < items.length; i++) {
-    const d = items[i].date;
-    if (d && curr && d !== curr) {
-      const ddPrev = curr.split('-').reverse().join('-');
-      const ddNew  = d.split('-').reverse().join('-');
-
-      switch (DATE_STAMP_MODE) {
-        case 'left-prev': out[i-1] = `${items[i-1].timeLabel}<br>${ddPrev}`; break;
-        case 'left-next': out[i-1] = `${items[i-1].timeLabel}<br>${ddNew}`;  break;
-        case 'right':     out[i]   = `${items[i].timeLabel}<br>${ddNew}`;    break;
-        case 'both':
-          out[i-1] = `${items[i-1].timeLabel}<br>${ddPrev}`;
-          out[i]   = `${items[i].timeLabel}<br>${ddNew}`;
-          break;
-      }
-      stamped = true;
-      curr = d;
-    }
-  }
-  if (!stamped && items[0]?.date) {
-    const dd = items[0].date.split('-').reverse().join('-');
-    out[0] = `${items[0].timeLabel}<br>${dd}`;
-  }
-  return out;
-}
-
-// ======= CSS del selector y de la TABLA =======
+// ======= CSS selector + tabla =======
 (function injectCSS(){
   if (!document.getElementById('agg-toolbar-css')) {
     const style = document.createElement('style');
@@ -139,12 +118,13 @@ function buildTickText(labels) {
 })();
 
 // ======= Estado =======
-let parsedRows         = [];     // filas CSV originales (objetos)
-let rawRecords         = [];     // [{ts, values:{...}}]
-let currentAggMinutes  = 5;
-let currentLabels      = [];     // etiquetas de bins del intervalo seleccionado
-let currentValues      = [];     // valores agregados (o crudos para 5 min)
-let minIndex=0, maxIndex=0;      // slider indices
+let parsedRows        = [];     // filas CSV
+let rawRecords        = [];     // [{ts, values:{...}}] crudo ordenado
+let currentAggMinutes = 5;
+let currentLabels     = [];     // etiqueta de cada punto/barra
+let currentValues     = [];     // valor de cada punto/barra
+let currentTimes      = [];     // timestamp (ms) de cada punto/barra
+let minIndex=0, maxIndex=0;     // slider indices
 
 // ======= Utilidades =======
 function intervalLabel(minutes){
@@ -158,9 +138,7 @@ function intervalLabel(minutes){
   if (minutes === 1440) return '24 hr';
   return `${minutes} min`;
 }
-function isFiniteNum(v){ return Number.isFinite(v); }
 function floorToBin(ts, minutes){ const w = minutes*60000; return ts - (ts % w); }
-
 function parseCsv(text){
   const lines = text.split('\n').filter(l => l.trim() !== '');
   if (!lines.length) return [];
@@ -175,14 +153,12 @@ function parseCsv(text){
   }
   return rows;
 }
-
 function toIsoDateFromCSV(fechaStr) {
   if (!fechaStr) {
     const d=new Date(); return `${d.getFullYear()}-${fmt2(d.getMonth()+1)}-${fmt2(d.getDate())}`;
   }
   const p = fechaStr.split(/[-/]/);
   if (p.length !== 3) return new Date().toISOString().slice(0,10);
-  // Soporta DD-MM-YYYY y YYYY-MM-DD
   if (p[0].length === 4) {
     const [yyyy, mm, dd] = p;
     return `${yyyy}-${fmt2(mm)}-${fmt2(dd)}`;
@@ -197,12 +173,10 @@ function parseTs(dateISO, horaStr){
   const ms = Date.parse(`${dateISO}T${hhmmss}`);
   return Number.isFinite(ms) ? ms : null;
 }
-
 function getColorForKey(key) {
   return COLORS[key] || '#000066';
 }
-
-// Eje Y dinámico
+// Eje Y dinámico: [0, 2×máximo]
 function updateYAxisRange(divId, yValues){
   const finite = (yValues||[]).filter(v => Number.isFinite(v) && v >= 0);
   const maxVal = finite.length ? Math.max(...finite) : 0;
@@ -210,35 +184,45 @@ function updateYAxisRange(divId, yValues){
   Plotly.relayout(divId, { 'yaxis.autorange': false, 'yaxis.range': [0, upper] });
 }
 
-// ----- Ticks X: máximo 24 -----
-function getTickArrays(labels, maxTicks = 24){
-  const n = labels.length;
-  if (n === 0) return { tickvals: [], ticktext: [] };
+// ======= Construcción de ticks desde tiempos reales (máx. 24) =======
+function buildTicksFromTimes(xTs, maxTicks=24){
+  const n = xTs.length;
+  if (!n) return { tickvals: [], ticktext: [] };
 
-  // Construimos todo el ticktext y luego muestreamos para conservar las fechas correctas
-  const fullTickText = buildTickText(labels);
-
-  if (n <= maxTicks) {
-    return { tickvals: labels.map((_,i)=>i), ticktext: fullTickText };
+  if (n <= maxTicks){
+    const tickvals = xTs.slice();
+    const ticktext = xTs.map((t,i,arr)=>{
+      const base = fmtTime(t);
+      if (i>0 && !sameDay(arr[i-1], t)) return `${base}<br>${ddmmyyyy(t)}`;
+      return base;
+    });
+    return { tickvals, ticktext };
   }
   const step = Math.ceil(n / maxTicks);
-  const tickvals = [];
-  for (let i=0; i<n; i+=step) tickvals.push(i);
-  if (tickvals[tickvals.length-1] !== n-1) tickvals.push(n-1);
-  const ticktext = tickvals.map(i => fullTickText[i]);
+  const idxs = [];
+  for (let i=0; i<n; i+=step) idxs.push(i);
+  if (idxs[idxs.length-1] !== n-1) idxs.push(n-1);
+
+  const tickvals = idxs.map(i=>xTs[i]);
+  const ticktext = idxs.map((i,k)=>{
+    const base = fmtTime(xTs[i]);
+    if (k>0 && !sameDay(xTs[idxs[k-1]], xTs[i])) return `${base}<br>${ddmmyyyy(xTs[i])}`;
+    return base;
+  });
   return { tickvals, ticktext };
 }
 
 // ======= Agregador =======
 function aggregateForKey(key, minutes){
   if (minutes === SAMPLE_BASE_MIN) {
-    // 5 min (crudo, sin rangos en tick)
+    // 5 min crudo
     const labels = rawRecords.map(r => makeBinLabel(r.ts, SAMPLE_BASE_MIN, LABEL_MODE));
     const values = rawRecords.map(r => Number(r.values[key]));
-    return { labels, values };
+    const xTs    = rawRecords.map(r => r.ts);
+    return { labels, values, xTs };
   }
 
-  const byBin = new Map(); // binStart -> {sum, count}
+  const byBin = new Map(); // binStart -> {sum,count}
   for (const r of rawRecords){
     const v = Number(r.values[key]);
     if (!Number.isFinite(v)) continue;
@@ -256,54 +240,54 @@ function aggregateForKey(key, minutes){
 
   const labels = bins.map(b => makeBinLabel(b, minutes, LABEL_MODE));
   const values = bins.map(b => byBin.get(b).sum / byBin.get(b).count);
-  return { labels, values };
+
+  // xTs = tiempo representativo del bin (inicio por defecto; si LABEL_MODE === 'end', usar fin)
+  const xTs = bins.map(b => (LABEL_MODE === 'end') ? (b + minutes*60000) : b);
+
+  return { labels, values, xTs };
 }
 
-// ======= Pintado =======
-function plot(labels, values, key, titleText) {
-  const idx = labels.map((_,i)=>i);
-  const { tickvals, ticktext } = getTickArrays(labels, 24);
+// ======= Plot (eje X temporal real, sin slider Plotly, sin grillas, máx. 24 ticks) =======
+function plot(labels, values, xTs, key, titleText) {
+  const { tickvals, ticktext } = buildTicksFromTimes(xTs, 24);
 
   const trace = {
-    x: idx,
+    x: xTs,               // ← tiempos reales
     y: values,
-    type: 'bar',
+    type: 'scatter',
+    mode: 'lines',
+    fill: 'tozeroy',      // área
     name: titleText,
+    line: { width: 1.5 },
+    fillcolor: getColorForKey(key),
     marker: { color: getColorForKey(key) }
   };
+
   const layout = {
     xaxis: {
-      type: 'category',
+      type: 'date',
       tickmode:'array',
       tickvals,
       ticktext,
       tickangle:-45,
       automargin:true,
-      // sin slider Plotly y sin grillas
-      rangeslider: { visible: false },
-      showgrid: false,
-      zeroline: false,
-      showline: true,
+      rangeslider: { visible: false }, // sin slider de Plotly
+      showgrid: false, zeroline: false, showline: true,
       title: { text:'<b>Fecha y Hora de Medición</b>', font:{ size:16,color:'black',family:'Arial',weight:'bold' }, standoff: 36 },
       tickfont: { color:'black', size:14, family:'Arial', weight:'bold' }
     },
     yaxis: {
       title: { text: `<b>${titleText}</b>`, font:{ size:16,color:'black',family:'Arial',weight:'bold' } },
       tickfont: { color:'black', size:14, family:'Arial', weight:'bold' },
-      rangemode:'tozero',
-      autorange:true,
-      fixedrange:false,
-      // sin grillas
-      showgrid: false,
-      zeroline: false,
-      showline: true
+      rangemode:'tozero', autorange:true, fixedrange:false,
+      showgrid:false, zeroline:false, showline:true
     },
     margin:{ t:20, l:60, r:40, b:130 },
-    bargap:0.2,
     paper_bgcolor:'#cce5dc',
     plot_bgcolor:'#cce5dc',
     showlegend:false
   };
+
   Plotly.newPlot(chartDiv, [trace], layout, {responsive:true, useResizeHandler:true});
   updateYAxisRange(chartDiv.id, values);
 }
@@ -332,17 +316,15 @@ function updateSliderUI(){
 function prettyValue(key, v){
   if (!Number.isFinite(v)) return '-';
   if (key === 'HumedadRelativa') return String(Math.round(v)); // entero
-  // 2 decimales
-  return (Math.round(v*100)/100).toFixed(2);
+  return (Math.round(v*100)/100).toFixed(2);                    // 2 decimales
 }
-
 function updateDataTable(labels, values, key, minutes){
   const table = document.createElement('table');
   table.id = 'uploadTable';
   const thead = document.createElement('thead');
   const headerRow = document.createElement('tr');
 
-  const intervalText = intervalLabel(minutes); // “5 min”, “1 hr”, etc.
+  const intervalText = intervalLabel(minutes);
   ['#', `Fecha y Hora (${intervalText})`, key.toUpperCase()].forEach(text => {
     const th = document.createElement('th'); th.textContent = text; headerRow.appendChild(th);
   });
@@ -397,13 +379,14 @@ function rebuildForCurrentSelection(){
   const key   = dataSelector.value;
   const title = dataSelector.options[dataSelector.selectedIndex].text;
 
-  const { labels, values } = aggregateForKey(key, currentAggMinutes);
+  const { labels, values, xTs } = aggregateForKey(key, currentAggMinutes);
   currentLabels = labels;
   currentValues = values;
+  currentTimes  = xTs;
 
   setSliderBounds(currentLabels.length);
   // Pinta y tabla para el rango inicial completo
-  plot(currentLabels, currentValues, key, title);
+  plot(currentLabels, currentValues, currentTimes, key, title);
   updateDataTable(currentLabels, currentValues, key, currentAggMinutes);
 }
 
@@ -434,7 +417,7 @@ csvFileInput.addEventListener('change', () => {
         const ts = parseTs(lastDateISO, h);
         if (!Number.isFinite(ts)) continue;
 
-        // Mapea valores numéricos
+        // Mapea valores numéricos presentes en el CSV
         const values = {};
         Object.keys(COLORS).forEach(k => {
           if (k in row) values[k] = Number(row[k]);
@@ -496,7 +479,9 @@ rangeInputs.forEach((input) => {
 
     const labels = currentLabels.slice(start, end+1);
     const values = currentValues.slice(start, end+1);
-    plot(labels, values, key, title);
+    const xTs    = currentTimes.slice(start, end+1);
+
+    plot(labels, values, xTs, key, title);
     updateDataTable(currentLabels, currentValues, key, currentAggMinutes);
   });
 });
