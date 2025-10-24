@@ -61,8 +61,10 @@ function fmt2(n){ return String(n).padStart(2,'0'); }
 
 function fmtDate(ms){
   const d = new Date(ms);
-  return `${d.getFullYear()}-${fmt2(d.getMonth()+1)}-${fmt2(d.getDate())}`;
+  // DD-MM-YYYY
+  return `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;
 }
+
 
 function fmtTime(ms){
   const d = new Date(ms);
