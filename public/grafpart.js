@@ -32,7 +32,7 @@
       }
       .agg-toolbar{
         display:flex; gap:6px; flex-wrap:wrap; align-items:center; justify-content:flex-start;
-        --agg-btn-w: 80px;
+        --agg-btn-w: 96px;
       }
       .agg-btn{
         cursor:pointer; user-select:none;
