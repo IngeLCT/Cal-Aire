@@ -146,11 +146,11 @@
    * inicial del bin (que es la que pusimos al inicio de la etiqueta).
    */
   
-  function buildTickText(labels) {
+  function buildTickText(labels, minutes) {
     // Mantiene todo el texto de hora: "hh:mm" o "hh:mm–hh:mm"
     const items = labels.map(s => {
       const str = String(s ?? '');
-      const m = str.match(/^(\d{4}-\d{2}-\d{2})\s+(.+)$/);
+      const m = str.match(/^((?:\d{4}-\d{2}-\d{2})|(?:\d{2}-\d{2}-\d{4}))\s+(\d{1,2}:\d{2})/);
       return { date: m ? m[1] : '', timeLabel: m ? m[2] : str };
     });
 
@@ -189,6 +189,23 @@
       const dd = items[0].date.split('-').reverse().join('-');
       out[0] = `${items[0].timeLabel}<br>${dd}`;
     }
+    if (minutes === 240) {
+    let pusoAlguna = false;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].time === '00:00' && items[i].date) {
+        const d = items[i].date;
+        const ddmmyyyy = /^\d{4}-\d{2}-\d{2}$/.test(d) ? d.split('-').reverse().join('-') : d;
+        out[i] = `${items[i].time}<br>${ddmmyyyy}`;
+        pusoAlguna = true;
+      }
+    }
+    if (!pusoAlguna && items[0]?.date) {
+      const d0 = items[0].date;
+      const ddmmyyyy0 = /^\d{4}-\d{2}-\d{2}$/.test(d0) ? d0.split('-').reverse().join('-') : d0;
+      out[0] = `${items[0].time}<br>${ddmmyyyy0}`;
+    }
+    return out;
+  }
     return out;
   }
 
@@ -269,7 +286,7 @@
         type: 'category',
         tickmode:'array',
         tickvals: labels.map((_,i)=>i),
-        ticktext: buildTickText(labels),
+        ticktext: buildTickText(labels, minutes),
         tickangle:-45,
         automargin:true,
         gridcolor:'black',
@@ -364,7 +381,7 @@
         type: 'category',
         tickmode:'array',
         tickvals: xIdx,
-        ticktext: buildTickText(labels),
+        ticktext: buildTickText(labels, minutes),
         tickangle:-45,
         automargin:true,
         gridcolor:'black',
