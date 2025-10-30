@@ -49,12 +49,15 @@ const MENU = [
   { label:'24 hr',        val: 1440 }
 ];
 
-// ======= Etiquetado flexible del eje X =======
-// 'start' | 'end' | 'range'
-const LABEL_MODE = 'start';
-
-// Estampado de fecha en el cambio de día: 'left-prev' | 'left-next' | 'right' | 'both'
-const DATE_STAMP_MODE = 'left-next';
+  // ===================== Etiquetado flexible del eje X =====================
+  // Opciones: 'start' | 'end' | 'range'
+  const LABEL_MODE = 'start'; // cámbialo a 'end' o 'range' cuando quieras
+  // Dónde estampar la fecha cuando cambia el día:
+  // 'left-prev'  → fecha del día ANTERIOR bajo el tick izquierdo
+  // 'left-next'  → fecha del NUEVO día bajo el tick izquierdo  ← lo que pides
+  // 'right'      → fecha del nuevo día bajo el tick derecho
+  // 'both'       → fecha anterior en el izquierdo y nueva en el derecho
+  const DATE_STAMP_MODE = 'left-next';
 
 // ======= Helpers de formato =======
 function fmt2(n){ return String(n).padStart(2,'0'); }

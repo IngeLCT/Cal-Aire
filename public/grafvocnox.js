@@ -93,7 +93,7 @@
 
   // ===================== Etiquetado flexible del eje X =====================
   // Opciones: 'start' | 'end' | 'range'
-  const LABEL_MODE = 'range'; // cámbialo a 'end' o 'range' cuando quieras
+  const LABEL_MODE = 'start'; // cámbialo a 'end' o 'range' cuando quieras
   // Dónde estampar la fecha cuando cambia el día:
   // 'left-prev'  → fecha del día ANTERIOR bajo el tick izquierdo
   // 'left-next'  → fecha del NUEVO día bajo el tick izquierdo  ← lo que pides
