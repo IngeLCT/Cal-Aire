@@ -55,6 +55,21 @@
     document.head.appendChild(style);
   })();
 
+  // --- Binning alineado a medianoche local ---
+  function startOfLocalDayMs(ms) {
+    const d = new Date(ms);
+    d.setHours(0, 0, 0, 0);            // medianoche LOCAL del día de ms
+    return d.getTime();
+  }
+
+  function floorToBinLocal(ms, minutes) {
+    const day0   = startOfLocalDayMs(ms);
+    const wMs    = minutes * 60000;
+    const offset = ms - day0;          // ms transcurridos desde medianoche local
+    const binOff = Math.floor(offset / wMs) * wMs;
+    return day0 + binOff;              // inicio del bin (LOCAL) que contiene ms
+  }
+
   // ===================== Helpers de fecha/hora =====================
   function toIsoDate(fecha) {
     if (!fecha || typeof fecha !== 'string') {
@@ -347,7 +362,7 @@
       if (!Number.isFinite(val)) continue;
       if (r.ts > lastTs) lastTs = r.ts;
 
-      const bin = floorToBin(r.ts, minutes);
+      const bin = floorToBinLocal(r.ts, minutes);
       const g = groups.get(bin) || { sum: 0, count: 0 };
       g.sum += val; g.count += 1;
       groups.set(bin, g);
