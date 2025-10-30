@@ -146,68 +146,77 @@
    * inicial del bin (que es la que pusimos al inicio de la etiqueta).
    */
   
+  // Acepta YYYY-MM-DD o DD-MM-YYYY. Resuelve el caso especial 4h.
   function buildTickText(labels, minutes) {
-    // Mantiene todo el texto de hora: "hh:mm" o "hh:mm–hh:mm"
+    // 1) Parseo de fecha + HORA INICIAL (soporta 'start'/'end'/'range')
     const items = labels.map(s => {
       const str = String(s ?? '');
-      const m = str.match(/^((?:\d{4}-\d{2}-\d{2})|(?:\d{2}-\d{2}-\d{4}))\s+(\d{1,2}:\d{2})/);
-      return { date: m ? m[1] : '', timeLabel: m ? m[2] : str };
+      // date = YYYY-MM-DD o DD-MM-YYYY ; time = HH:MM (toma la inicial si fuese rango)
+      const m = str.match(
+        /^((?:\d{4}-\d{2}-\d{2})|(?:\d{2}-\d{2}-\d{4}))\s+(\d{1,2}:\d{2})/
+      );
+      return { date: m ? m[1] : '', time: m ? m[2] : str };
     });
 
-    const out = items.map(it => it.timeLabel);
-    let curr = items[0]?.date || '';
+    // 2) Base: solo la hora
+    const out = items.map(it => it.time);
     let stamped = false;
 
-    for (let i = 1; i < items.length; i++) {
-      const d = items[i].date;
-      if (d && curr && d !== curr) {
-        const ddPrev = curr.split('-').reverse().join('-');
-        const ddNew  = d.split('-').reverse().join('-');
-
-        switch (DATE_STAMP_MODE) {
-          case 'left-prev':
-            out[i - 1] = `${items[i - 1].timeLabel}<br>${ddPrev}`;
-            break;
-          case 'left-next': // ← fecha del día que empieza, pero en el tick izquierdo
-            out[i - 1] = `${items[i - 1].timeLabel}<br>${ddNew}`;
-            break;
-          case 'right':
-            out[i] = `${items[i].timeLabel}<br>${ddNew}`;
-            break;
-          case 'both':
-            out[i - 1] = `${items[i - 1].timeLabel}<br>${ddPrev}`;
-            out[i]     = `${items[i].timeLabel}<br>${ddNew}`;
-            break;
-        }
-        stamped = true;
-        curr = d;
-      }
-    }
-
-    // Si todo es un mismo día visible, estampa la fecha en el primer tick
-    if (!stamped && items[0]?.date) {
-      const dd = items[0].date.split('-').reverse().join('-');
-      out[0] = `${items[0].timeLabel}<br>${dd}`;
-    }
+    // 3) Caso especial 4h: estampar fecha en ticks 00:00 (o en el primero visible)
     if (minutes === 240) {
-    let pusoAlguna = false;
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].time === '00:00' && items[i].date) {
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].time === '00:00' && items[i].date) {
+          const d = items[i].date;
+          const ddmmyyyy = /^\d{4}/.test(d) ? d.split('-').reverse().join('-') : d;
+          out[i] = `${items[i].time}<br>${ddmmyyyy}`;
+          stamped = true;
+        }
+      }
+      if (!stamped && items[0]?.date) {
+        const d0 = items[0].date;
+        const ddmmyyyy0 = /^\d{4}/.test(d0) ? d0.split('-').reverse().join('-') : d0;
+        out[0] = `${items[0].time}<br>${ddmmyyyy0}`;
+        stamped = true;
+      }
+    } else {
+      // 4) Resto de intervalos: fecha en el tick adecuado según DATE_STAMP_MODE
+      let curr = items[0]?.date || '';
+      for (let i = 1; i < items.length; i++) {
         const d = items[i].date;
-        const ddmmyyyy = /^\d{4}-\d{2}-\d{2}$/.test(d) ? d.split('-').reverse().join('-') : d;
-        out[i] = `${items[i].time}<br>${ddmmyyyy}`;
-        pusoAlguna = true;
+        if (d && curr && d !== curr) {
+          const ddPrev = /^\d{4}/.test(curr) ? curr.split('-').reverse().join('-') : curr;
+          const ddNew  = /^\d{4}/.test(d)    ? d.split('-').reverse().join('-')    : d;
+          switch (DATE_STAMP_MODE) {
+            case 'left-prev':
+              out[i - 1] = `${items[i - 1].time}<br>${ddPrev}`;
+              break;
+            case 'left-next':
+              out[i - 1] = `${items[i - 1].time}<br>${ddNew}`;
+              break;
+            case 'right':
+              out[i] = `${items[i].time}<br>${ddNew}`;
+              break;
+            case 'both':
+              out[i - 1] = `${items[i - 1].time}<br>${ddPrev}`;
+              out[i]     = `${items[i].time}<br>${ddNew}`;
+              break;
+          }
+          stamped = true;
+          curr = d;
+        }
       }
     }
-    if (!pusoAlguna && items[0]?.date) {
-      const d0 = items[0].date;
-      const ddmmyyyy0 = /^\d{4}-\d{2}-\d{2}$/.test(d0) ? d0.split('-').reverse().join('-') : d0;
-      out[0] = `${items[0].time}<br>${ddmmyyyy0}`;
+
+    // 5) Si toda la ventana es un solo día, estampa fecha en el primer tick
+    if (!stamped && items[0]?.date) {
+      const dd = /^\d{4}/.test(items[0].date)
+        ? items[0].date.split('-').reverse().join('-')
+        : items[0].date;
+      out[0] = `${items[0].time}<br>${dd}`;
     }
     return out;
   }
-    return out;
-  }
+
 
 
   // ===================== Rango dinámico del eje Y =====================
@@ -286,7 +295,7 @@
         type: 'category',
         tickmode:'array',
         tickvals: labels.map((_,i)=>i),
-        ticktext: buildTickText(labels, minutes),
+        ticktext: buildTickText(labels, cfg.agg),
         tickangle:-45,
         automargin:true,
         gridcolor:'black',
@@ -381,7 +390,7 @@
         type: 'category',
         tickmode:'array',
         tickvals: xIdx,
-        ticktext: buildTickText(labels, minutes),
+        ticktext: buildTickText(labels, cfg.agg),
         tickangle:-45,
         automargin:true,
         gridcolor:'black',
