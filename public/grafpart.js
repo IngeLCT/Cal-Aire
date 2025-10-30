@@ -306,32 +306,48 @@
     const values = last.map(r => Number(r[key]));
     return { labels, values };
   }
-  // Agregado: últimos 24 bins COMPLETOS (sin huecos)
-  function getAgg24ForKey(key, minutes) {
-    if (!raw.length) return { labels: new Array(MAX_BARS).fill(''), values: new Array(MAX_BARS).fill(null) };
 
-    const groups = new Map(); // binStartMs -> {sum,count}
+  // Agregado: últimos 24 bins COMPLETOS (sin huecos) y SIN mostrar el bin en curso
+  function getAgg24ForKey(key, minutes) {
+    if (!raw.length) {
+      return { labels: new Array(MAX_BARS).fill(''), values: new Array(MAX_BARS).fill(null) };
+    }
+
+    const widthMs = minutes * 60000;
+    let lastTs = 0;
+
+    // 1) Agrupar por bin y registrar el último timestamp recibido
+    const groups = new Map(); // binStartMs -> {sum, count}
     for (const r of raw) {
-      const bin = floorToBin(r.ts, minutes);
       const val = Number(r[key]);
       if (!Number.isFinite(val)) continue;
-      const g = groups.get(bin) || { sum:0, count:0 };
+      if (r.ts > lastTs) lastTs = r.ts;
+
+      const bin = floorToBin(r.ts, minutes);
+      const g = groups.get(bin) || { sum: 0, count: 0 };
       g.sum += val; g.count += 1;
       groups.set(bin, g);
     }
 
-    // Bin completo = al menos minutes / SAMPLE_BASE_MIN muestras
-    //Se agrego multiplicacion por 0.9 para tomar como valido si tiene el 90% de los datos
-    const required = Math.max(1, Math.ceil((minutes / SAMPLE_BASE_MIN) * 0.9));
-    const completeKeys = Array.from(groups.keys())
-      .filter(k => groups.get(k).count >= required)
-      .sort((a,b)=>a-b);
+    // 2) Excluir el bin cuyo FIN aún no llega (bin en curso)
+    //    Solo consideramos bins cuyo fin (binStart + width) <= último dato
+    const endedBins = Array.from(groups.keys())
+      .filter(b => (b + widthMs) <= lastTs);
 
-    const take = completeKeys.slice(-MAX_BARS);
+    // 3) Umbral de cobertura 0.85 solo sobre bins TERMINADOS
+    const expected  = minutes / SAMPLE_BASE_MIN;                  // p.ej. 15/5 = 3
+    const required  = Math.max(1, Math.ceil(expected * 0.85));    // tu nuevo umbral
+    const complete  = endedBins.filter(b => groups.get(b).count >= required)
+                              .sort((a,b) => a - b);
+
+    // 4) Preparar últimas 24 barras
+    const take   = complete.slice(-MAX_BARS);
     const labels = take.map(b => makeBinLabel(b, minutes, LABEL_MODE));
     const values = take.map(b => groups.get(b).sum / groups.get(b).count);
+
     return { labels, values };
   }
+
 
   // ===================== Pintado =====================
   function setChartData(cfg, labels, values) {
