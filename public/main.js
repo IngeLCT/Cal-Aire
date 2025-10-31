@@ -1,15 +1,4 @@
-const firebaseConfig = {
-  apiKey: "AIzaSyAmmWdNz0bua_-cHeaaQ_Uhyl6IxPB3MZk",
-  authDomain: "cal-aire.firebaseapp.com",
-  databaseURL: "https://cal-aire-default-rtdb.firebaseio.com",
-  projectId: "cal-aire",
-  storageBucket: "cal-aire.firebasestorage.app",
-  messagingSenderId: "251397262883",
-  appId: "1:251397262883:web:5bb2049547fba7efb0eb96",
-  measurementId: "G-RD7CP9P6VM"
-};
 
-firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
 
 // Inicializa la librería de alerta (usa el umbral definido dentro de stale-alert.js)
